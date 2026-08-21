@@ -15,21 +15,28 @@
   html,body { height:100%; margin:0; color:var(--ink); background:var(--paper);
               font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
   body { display:grid; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden; }
-  header { z-index:4; padding:10px 16px; border-bottom:1px solid var(--rule); background:var(--panel);
+  header { z-index:4; padding:9px 16px; border-bottom:1px solid var(--rule); background:var(--panel);
            display:flex; justify-content:space-between; align-items:center; gap:18px; flex-wrap:wrap; }
   h1 { margin:0; font:600 18px/1.2 Georgia,serif; }
-  .subtitle { color:var(--muted); font-size:12px; margin-top:2px; max-width:900px; }
+  .subtitle { color:var(--muted); font-size:12px; margin-top:2px; max-width:860px; }
   .hold { background:#7c2d12; color:#fff7ed; font-size:12px; padding:6px 16px; }
-  .ctl { font-size:12px; color:var(--muted); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
-  .ctl label { display:flex; gap:4px; align-items:center; }
+  .ctl { font-size:12px; color:var(--muted); min-width:290px; }
+  .ctl label { display:inline-flex; gap:4px; align-items:center; margin-right:8px; }
   .ctl input { accent-color:#b91c1c; margin:0; }
+  .ctl input[type=range] { width:280px; accent-color:#b91c1c; }
+  .ctl output { color:#b91c1c; font-weight:700; font-variant-numeric:tabular-nums; }
+  .ctl .off { opacity:.4; }
   #map { width:100%; height:100%; }
-  .panel { position:absolute; top:12px; left:12px; z-index:3; width:250px; background:var(--panel);
+  .panel { position:absolute; top:12px; left:12px; z-index:3; width:255px; background:var(--panel);
            border:1px solid var(--rule); border-radius:8px; padding:10px 12px; font-size:12.5px;
            max-height:calc(100% - 48px); overflow:auto; box-shadow:0 1px 4px rgba(0,0,0,.12); }
   .panel h2 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
   .row { display:flex; align-items:center; gap:7px; padding:2.5px 0; }
+  .row input { margin:0; accent-color:#b91c1c; }
   .swatch { width:22px; height:0; border-top:4px solid; flex:none; }
+  .swatch.thin { border-top-width:3px; }
+  .swatch.dashed { border-top-style:dashed; }
+  .swatch.dot { width:9px; height:9px; border-radius:50%; border:none; }
   .note { color:var(--muted); margin-top:6px; line-height:1.45; }
   .maplibregl-popup-content { font:12px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
                               max-height:280px; overflow:auto; min-width:230px; }
@@ -46,36 +53,48 @@
 </div>
 <header>
   <div>
-    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4 · NT+</span></h1>
+    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4</span></h1>
     <div class="subtitle">
       Worst single-contingency post-fault loading per GW of TYNDP-2026-shaped transfer, on the open
-      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Typed parameters,
-      screening only — not operational data.
+      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Headroom is
+      <b>per GW and scale-free</b>: moving the year changes the transfer shape and — with plans on —
+      the network itself, not the transfer volume. The "plan effect" view colors what the published
+      plans change.
     </div>
   </div>
   <div class="ctl">
-    <span>Horizon:</span>
-    <label><input type="radio" name="yr" value="2030" checked> 2030</label>
-    <label><input type="radio" name="yr" value="2035"> 2035</label>
-    <label><input type="radio" name="yr" value="2040"> 2040</label>
-    <span style="margin-left:10px">Network:</span>
-    <label><input type="radio" name="st" value="e" checked> existing</label>
-    <label><input type="radio" name="st" value="p"> with published plans</label>
+    <label for="yearslider" style="display:block">Development year <output id="yearout">2030</output>
+      <span id="horizonout" style="margin-left:8px" title="Stress and scenario figures exist at 2030 (NT+ only), 2035 and 2040; the slider snaps to the nearest">· horizon 2030</span></label>
+    <input id="yearslider" type="range" min="2025" max="2040" step="1" value="2030">
+    <div style="margin-top:2px">
+      <label title="National Trends+ — ENTSO-E/ENTSOG TYNDP 2026 central policy scenario"><input type="radio" name="scen" value="ntp" checked> NT+</label>
+      <label title="Low Economy Variant — TYNDP 2026, defined for 2035/2040"><input type="radio" name="scen" value="lev"> LEV</label>
+      <label title="High Economy Variant — TYNDP 2026, defined for 2035/2040"><input type="radio" name="scen" value="hev"> HEV</label>
+      <span style="margin-left:8px">·</span>
+      <label style="margin-left:6px"><input type="radio" name="st" value="e" checked> existing</label>
+      <label><input type="radio" name="st" value="p"> with plans</label>
+      <label title="Colors the change in N-1 headroom that the published plans make at this horizon"><input type="radio" name="st" value="delta"> plan effect</label>
+    </div>
   </div>
 </header>
 <div style="position:relative; min-height:0;">
   <div id="map"></div>
   <div class="panel">
-    <h2>N-1 headroom (GW of shaped transfer to first post-fault limit)</h2>
+    <h2 id="legend-title">N-1 headroom (GW of shaped transfer to first post-fault limit)</h2>
     <div id="legend"></div>
-    <div class="note">Dashed = planned line from a public development plan (typed parameters,
-      schematic alignment). Dotted grey = connection radials (bridges) — flagged, not scored.
-      Click any branch for its binding contingency and driving transfer.</div>
+    <h2 style="margin-top:10px">Development &amp; scenarios</h2>
+    <div id="legend-dev"></div>
+    <div class="note">Dashed violet = planned line from a public development plan (schematic —
+      not a route alignment; promoter-stated years). Dotted grey = connection radials (bridges),
+      flagged not scored. Click any branch for its binding contingency and driving transfer.</div>
   </div>
 </div>
 <script>
 const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
-const state = { yr: "2030", st: "e" };
+const state = { year: 2030, scen: "ntp", st: "e" };
+const HORIZONS = { ntp: [2030, 2035, 2040], lev: [2035, 2040], hev: [2035, 2040] };
+const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
+let TOTALS = null;
 
 const CLASSES = [
   { max: 3,        color: "#b91c1c", label: "< 3 GW" },
@@ -84,6 +103,17 @@ const CLASSES = [
   { max: 25,       color: "#16a34a", label: "12–25 GW" },
   { max: Infinity, color: "#9ca3af", label: "≥ 25 GW" },
 ];
+const DELTA_CLASSES = [
+  { min: 5,         color: "#15803d", label: "headroom +5 GW or more" },
+  { min: 1,         color: "#86efac", label: "+1 to +5 GW" },
+  { min: -1,        color: "#d1d5db", label: "≈ unchanged" },
+  { min: -Infinity, color: "#b91c1c", label: "worse (−1 GW or more)" },
+];
+const GROUP_COLORS = {
+  wind_onshore: "#0d9488", wind_offshore: "#155e75", solar: "#f59e0b",
+  hydro: "#2563eb", nuclear: "#7c3aed", gas: "#6b7280", coal: "#374151",
+  oil: "#78350f", bioenergy: "#65a30d", other_res: "#84cc16", battery: "#db2777",
+};
 
 const protocol = new pmtiles.Protocol();
 maplibregl.addProtocol("pmtiles", protocol.tile);
@@ -99,107 +129,297 @@ map.addControl(new maplibregl.AttributionControl({
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 new ResizeObserver(() => map.resize()).observe(document.getElementById("map"));
 
-const hField = () => `h_${state.yr}_${state.st}`;
-const uField = () => `u_${state.yr}_${state.st}`;
+function horizonFor(year, scen) {
+  const hs = HORIZONS[scen];
+  let best = hs[0];
+  for (const h of hs) if (Math.abs(h - year) < Math.abs(best - year)) best = h;
+  return best;
+}
+const sfx = (st) => `${state.scen}_${horizonFor(state.year, state.scen)}_${st}`;
+const hField = (st) => `h_${sfx(st)}`;
+const uField = (st) => `u_${sfx(st)}`;
 
 function colorExpr() {
+  if (state.st === "delta") {
+    const d = ["-", ["coalesce", ["get", hField("p")], 999],
+                    ["coalesce", ["get", hField("e")], 999]];
+    const expr = ["case"];
+    for (const c of DELTA_CLASSES.slice(0, -1)) expr.push([">=", d, c.min], c.color);
+    expr.push(DELTA_CLASSES[DELTA_CLASSES.length - 1].color);
+    return expr;
+  }
   const expr = ["case"];
   for (const c of CLASSES.slice(0, -1)) {
-    expr.push(["<", ["coalesce", ["get", hField()], 9999], c.max], c.color);
+    expr.push(["<", ["coalesce", ["get", hField(state.st)], 9999], c.max], c.color);
   }
   expr.push(CLASSES[CLASSES.length - 1].color);
   return expr;
 }
 function widthExpr() {
-  const u = ["min", 0.4, ["coalesce", ["get", uField()], 0]];
+  if (state.st === "delta") {
+    const d = ["abs", ["-", ["coalesce", ["get", hField("p")], 0],
+                            ["coalesce", ["get", hField("e")], 0]]];
+    const u = ["min", 0.5, ["*", 0.06, d]];
+    return ["interpolate", ["linear"], ["zoom"],
+            4, ["+", 0.8, ["*", 7, u]], 8, ["+", 1.4, ["*", 13, u]], 11, ["+", 2.2, ["*", 20, u]]];
+  }
+  const u = ["min", 0.4, ["coalesce", ["get", uField(state.st)], 0]];
   return ["interpolate", ["linear"], ["zoom"],
           4, ["+", 0.8, ["*", 9, u]], 8, ["+", 1.4, ["*", 16, u]], 11, ["+", 2.2, ["*", 24, u]]];
 }
-const hasData = () => ["has", `h_${state.yr}_${state.st}`];
+function stressFilter(kind) {
+  const base = ["all", ["==", ["get", "kind"], kind],
+                ["!=", ["get", "bridge"], true]];
+  if (state.st === "delta") {
+    // require both states present AND below the 999-GW headroom cap, so cap
+    // artifacts never masquerade as plan effects
+    base.push(["has", hField("e")], ["has", hField("p")],
+              ["<", ["coalesce", ["get", hField("e")], 9999], 998],
+              ["<", ["coalesce", ["get", hField("p")], 9999], 998]);
+  } else {
+    base.push(["has", hField(state.st)]);
+  }
+  return base;
+}
+
+// ---- context (mirrored from the public map) ----
+function datedFilter(kind) {
+  return kind === "rest"
+    ? ["any", ["!", ["has", "service_year_min"]],
+       [">", ["get", "service_year_min"], state.year]]
+    : ["all", ["has", "service_year_min"],
+       ["<=", ["get", "service_year_min"], state.year]];
+}
+function demandMWExpr() {
+  const h = horizonFor(state.year, state.scen);
+  const branches = [];
+  for (const [c, scens] of Object.entries(TOTALS.demand_avg_mw)) {
+    const v = scens[state.scen] && scens[state.scen][h];
+    if (v) branches.push(c, ["*", ["get", "d_share"], v]);
+  }
+  return ["match", ["get", "country"], ...branches, 0];
+}
+function genMWExpr() {
+  const h = horizonFor(state.year, state.scen);
+  const branches = [];
+  for (const [c, groups] of Object.entries(TOTALS.generation_capacity_mw)) {
+    for (const [g, scens] of Object.entries(groups)) {
+      const v = scens[state.scen] && scens[state.scen][h];
+      if (v) branches.push(c + "|" + g, ["*", ["get", "g_share"], v]);
+    }
+  }
+  return ["match", ["concat", ["get", "country"], "|", ["get", "group"]], ...branches, 0];
+}
+function circleRadius(mwExpr, k) {
+  const base = ["min", 42, ["+", 0.8, ["*", k, ["sqrt", ["max", 0, mwExpr]]]]];
+  return ["interpolate", ["linear"], ["zoom"],
+          4, ["*", 0.5, base], 7, base, 10, ["*", 1.8, base]];
+}
 
 let setupDone = false;
-function setup() {
+async function setup() {
   if (setupDone) return; setupDone = true;
+  wireControls();   // controls live from the start; refresh() guards on layers
+  try {
+    const tj = await fetch(PUBLIC_BASE + "scenario_totals.json");
+    if (tj.ok) TOTALS = await tj.json();
+  } catch (e) { /* context degrades gracefully */ }
+
   map.addSource("base", { type: "vector",
     url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_linework.pmtiles" });
+  map.addSource("context", { type: "vector",
+    url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_context.pmtiles" });
   map.addSource("stress", { type: "vector", url: "pmtiles://stress_v4.pmtiles" });
 
   map.addLayer({ id: "base_grid", type: "line", source: "base", "source-layer": "ac_lines",
     paint: { "line-color": "#c3cbd1", "line-width": 0.7 } });
 
+  if (TOTALS) {
+    map.addLayer({ id: "demand_places", type: "circle", source: "context",
+      "source-layer": "places", minzoom: 4, layout: { visibility: "none" },
+      paint: { "circle-color": "#0284c7", "circle-opacity": 0.25,
+               "circle-stroke-color": "#0284c7", "circle-stroke-opacity": 0.55,
+               "circle-stroke-width": 1, "circle-radius": circleRadius(demandMWExpr(), 0.42) } });
+    map.addLayer({ id: "gen_plants", type: "circle", source: "context",
+      "source-layer": "plants", minzoom: 4, layout: { visibility: "none" },
+      paint: { "circle-color": ["match", ["get", "group"],
+                 ...Object.entries(GROUP_COLORS).flat(), "#9ca3af"],
+               "circle-opacity": 0.35,
+               "circle-stroke-color": ["match", ["get", "group"],
+                 ...Object.entries(GROUP_COLORS).flat(), "#9ca3af"],
+               "circle-stroke-opacity": 0.6, "circle-stroke-width": 0.8,
+               "circle-radius": circleRadius(genMWExpr(), 0.5) } });
+  }
+
   map.addLayer({ id: "bridges", type: "line", source: "stress", "source-layer": "branches",
     filter: ["all", ["==", ["get", "bridge"], true]],
     paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6], "line-width": 1.0,
              "line-opacity": 0.6 } });
-
   map.addLayer({ id: "stress_existing", type: "line", source: "stress", "source-layer": "branches",
-    filter: ["all", ["==", ["get", "kind"], "line"], ["!=", ["get", "bridge"], true], hasData()],
+    filter: stressFilter("line"),
     paint: { "line-color": colorExpr(), "line-width": widthExpr() } });
-
   map.addLayer({ id: "stress_planned", type: "line", source: "stress", "source-layer": "branches",
-    filter: ["all", ["==", ["get", "kind"], "planned_line"], hasData()],
+    filter: stressFilter("planned_line"), layout: { visibility: "none" },
     paint: { "line-color": colorExpr(), "line-dasharray": [2.2, 1.6], "line-width": widthExpr() } });
 
-  const legend = document.getElementById("legend");
-  for (const c of CLASSES) {
-    const row = document.createElement("div");
-    row.className = "row";
-    row.innerHTML = `<span class="swatch" style="border-color:${c.color}"></span>${c.label}`;
-    legend.appendChild(row);
-  }
-  wireControls();
+  map.addLayer({ id: "proj_lines", type: "line", source: "context", "source-layer": "projects",
+    filter: ["all", ["==", ["geometry-type"], "LineString"], datedFilter("dated")],
+    layout: { visibility: "none" },
+    paint: { "line-color": "#7c3aed", "line-dasharray": [2.4, 1.8],
+             "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 2.0, 12, 3.4] } });
+  map.addLayer({ id: "proj_points", type: "circle", source: "context", "source-layer": "projects",
+    filter: ["all", ["==", ["geometry-type"], "Point"], datedFilter("dated")],
+    layout: { visibility: "none" },
+    paint: { "circle-color": "#7c3aed", "circle-opacity": 0.85,
+             "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 7],
+             "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
+
+  buildLegends();
   wirePopups();
+  refresh();
 }
 map.once("style.load", setup);
 map.once("load", setup);
 if (map.isStyleLoaded()) setup();
 
+function toggle(ids, on) {
+  for (const id of ids) if (map.getLayer(id))
+    map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
+}
+function legendRow(parent, swatchHtml, label, ids, startOn, title) {
+  const row = document.createElement("label");
+  row.className = "row";
+  if (title) row.title = title;
+  row.innerHTML = `<input type="checkbox" ${startOn ? "checked" : ""}>${swatchHtml}<span>${label}</span>`;
+  row.querySelector("input").addEventListener("change", e => toggle(ids, e.target.checked));
+  parent.appendChild(row);
+}
+function buildLegends() {
+  const dev = document.getElementById("legend-dev");
+  legendRow(dev, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
+            "Planned projects by year", ["proj_lines", "proj_points"], false,
+            "Public development plans; violet = shown by selected year");
+  if (TOTALS) {
+    legendRow(dev, `<span class="swatch dot" style="background:#0284c7;opacity:.6"></span>`,
+              "TYNDP demand at OSM places", ["demand_places"], false);
+    legendRow(dev, `<span class="swatch dot" style="background:linear-gradient(120deg,#0d9488 30%,#f59e0b 30% 60%,#2563eb 60%)"></span>`,
+              "TYNDP generation at OSM plants", ["gen_plants"], false);
+  }
+  renderStressLegend();
+}
+function renderStressLegend() {
+  const legend = document.getElementById("legend");
+  legend.innerHTML = "";
+  const set = state.st === "delta" ? DELTA_CLASSES : CLASSES;
+  document.getElementById("legend-title").textContent = state.st === "delta"
+    ? "Plan effect on N-1 headroom at this horizon"
+    : "N-1 headroom (GW of shaped transfer to first post-fault limit)";
+  for (const c of set) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="swatch" style="border-color:${c.color}"></span>${c.label}`;
+    legend.appendChild(row);
+  }
+}
+
 function refresh() {
+  const h = horizonFor(state.year, state.scen);
+  document.getElementById("yearout").textContent = state.year;
+  document.getElementById("horizonout").textContent = "· horizon " + h;
+  if (!map.getLayer("stress_existing")) return;  // layers not up yet
+  document.querySelectorAll("input[name=scen]").forEach(r => {
+    const ok = r.value === "ntp" || state.year >= 2033;
+    r.parentElement.classList.toggle("off", !ok);
+  });
   for (const id of ["stress_existing", "stress_planned"]) {
     map.setPaintProperty(id, "line-color", colorExpr());
     map.setPaintProperty(id, "line-width", widthExpr());
   }
-  map.setFilter("stress_existing",
-    ["all", ["==", ["get", "kind"], "line"], ["!=", ["get", "bridge"], true], hasData()]);
-  map.setFilter("stress_planned",
-    ["all", ["==", ["get", "kind"], "planned_line"], hasData()]);
+  map.setFilter("stress_existing", stressFilter("line"));
+  map.setFilter("stress_planned", stressFilter("planned_line"));
   map.setLayoutProperty("stress_planned", "visibility",
     state.st === "p" ? "visible" : "none");
+  for (const [id, kind] of [["proj_lines", "dated"], ["proj_points", "dated"]]) {
+    if (!map.getLayer(id)) continue;
+    const gf = map.getFilter(id);
+    map.setFilter(id, [gf[0], gf[1], datedFilter(kind)]);
+  }
+  if (TOTALS && map.getLayer("demand_places")) {
+    map.setPaintProperty("demand_places", "circle-radius", circleRadius(demandMWExpr(), 0.42));
+    map.setPaintProperty("gen_plants", "circle-radius", circleRadius(genMWExpr(), 0.5));
+  }
+  renderStressLegend();
 }
 function wireControls() {
-  document.querySelectorAll("input[name=yr]").forEach(r =>
-    r.addEventListener("change", () => { state.yr = r.value; refresh(); }));
+  const slider = document.getElementById("yearslider");
+  slider.addEventListener("input", () => { state.year = +slider.value; refresh(); });
+  document.querySelectorAll("input[name=scen]").forEach(r =>
+    r.addEventListener("change", () => { state.scen = r.value; refresh(); }));
   document.querySelectorAll("input[name=st]").forEach(r =>
     r.addEventListener("change", () => { state.st = r.value; refresh(); }));
-  refresh();
 }
 
 function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
 function wirePopups() {
+  const layers = () => ["stress_existing", "stress_planned", "bridges",
+                        "proj_lines", "proj_points", "demand_places", "gen_plants"]
+                       .filter(id => map.getLayer(id));
   map.on("click", e => {
-    const feats = map.queryRenderedFeatures(e.point,
-      { layers: ["stress_existing", "stress_planned", "bridges"] });
+    const feats = map.queryRenderedFeatures(e.point, { layers: layers() });
     if (!feats.length) return;
-    const p = feats[0].properties;
-    const sfx = `${state.yr}_${state.st}`;
-    const rows = [
-      ["headroom", p[`h_${sfx}`] != null ? p[`h_${sfx}`] + " GW of shaped transfer" : "—"],
-      ["worst N-1 loading", p[`u_${sfx}`] != null ? (p[`u_${sfx}`]*100).toFixed(1) + "% of typed rating per GW" : "—"],
-      ["binding contingency", p[`b_${sfx}`] || "—"],
-      ["driving transfer", p[`d_${sfx}`] || "—"],
-      ["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"],
-      ["rating basis", "inferred: v23 typed s_nom " + (p.s_nom_mva|0) + " MVA"],
-      ["evidence", "inferred: typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"],
-    ];
+    const f = feats[0];
+    const p = f.properties;
+    const h = horizonFor(state.year, state.scen);
+    let title, rows;
+    if (f.layer && f.layer.id === "bridges") {
+      title = p.name || p.fid;
+      rows = [["type", "connection radial (bridge)"],
+              ["screening", "its outage islands the network — flagged, not scored"],
+              ["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "—"]];
+    } else if (f.sourceLayer === "branches") {
+      const st = state.st === "delta" ? "p" : state.st;
+      const s = `${state.scen}_${h}_${st}`;
+      title = p.name || p.fid;
+      rows = [
+        ["headroom", p[`h_${s}`] != null ? p[`h_${s}`] + " GW of shaped transfer" : "—"],
+        ["worst N-1 loading", p[`u_${s}`] != null ? (p[`u_${s}`]*100).toFixed(1) + "% of typed rating per GW" : "—"],
+        ["binding contingency", p[`b_${s}`] || "—"],
+        ["driving transfer", p[`d_${s}`] || "—"],
+      ];
+      const he = p[`h_${state.scen}_${h}_e`], hp = p[`h_${state.scen}_${h}_p`];
+      if (he != null && hp != null && he < 998 && hp < 998)
+        rows.push(["plan effect", (hp - he >= 0 ? "+" : "") + (hp - he).toFixed(1) + " GW headroom"]);
+      rows.push(["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"],
+                ["rating basis", "inferred: v23 typed s_nom " + (p.s_nom_mva|0) + " MVA"],
+                ["evidence", "inferred: typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"]);
+    } else if (f.sourceLayer === "projects") {
+      title = p.name || "Planned development";
+      rows = [["promoter", p.promoter], ["window", `${p.service_year_min || "?"}–${p.service_year_max || "?"}`],
+              ["dates verbatim", p.dates_verbatim], ["geometry", p.geometry_kind],
+              ["source", p.source_url]].filter(([, v]) => v);
+    } else if (f.sourceLayer === "places" && TOTALS) {
+      const t = (TOTALS.demand_avg_mw[p.country] || {})[state.scen];
+      const mw = t && t[h] ? Math.round(p.d_share * t[h]).toLocaleString() + " MW" : "—";
+      title = p.name || "Populated place";
+      rows = [["population (OSM)", (+p.population).toLocaleString()],
+              [`avg demand, ${SCEN_LABEL[state.scen]} ${h}`, mw],
+              ["provenance", "inferred: TYNDP 2026 x OSM population weights"]];
+    } else if (f.sourceLayer === "plants" && TOTALS) {
+      const t = ((TOTALS.generation_capacity_mw[p.country] || {})[p.group] || {})[state.scen];
+      const mw = t && t[h] ? Math.round(p.g_share * t[h]).toLocaleString() + " MW" : "—";
+      title = p.name || "Power plant";
+      rows = [["technology", p.group], ["OSM weight", p.weight_mw + " MW (" + p.rating + ")"],
+              [`capacity, ${SCEN_LABEL[state.scen]} ${h}`, mw],
+              ["provenance", "inferred: TYNDP 2026 x OSM plant weights"]];
+    } else { return; }
     new maplibregl.Popup({ maxWidth: "330px" }).setLngLat(e.lngLat)
-      .setHTML(`<div class="ptitle">${esc(p.name || p.fid)}</div><table>` +
-        rows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join("") + "</table>")
+      .setHTML(`<div class="ptitle">${esc(title)}</div><table>` +
+        rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") + "</table>")
       .addTo(map);
   });
   map.on("mousemove", e => {
-    const feats = map.queryRenderedFeatures(e.point,
-      { layers: ["stress_existing", "stress_planned"] });
+    const feats = map.queryRenderedFeatures(e.point, { layers: layers() });
     map.getCanvas().style.cursor = feats.length ? "pointer" : "";
   });
 }
