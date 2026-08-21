@@ -38,6 +38,7 @@
   .swatch.dashed { border-top-style:dashed; }
   .swatch.dot { width:9px; height:9px; border-radius:50%; border:none; }
   .note { color:var(--muted); margin-top:6px; line-height:1.45; }
+  .off { opacity:.4; }
   .maplibregl-popup-content { font:12px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
                               max-height:280px; overflow:auto; min-width:230px; }
   .maplibregl-popup-content td { padding:1.5px 6px 1.5px 0; vertical-align:top; }
@@ -71,10 +72,11 @@
       <label title="Low Economy Variant — TYNDP 2026, defined for 2035/2040"><input type="radio" name="scen" value="lev"> LEV</label>
       <label title="High Economy Variant — TYNDP 2026, defined for 2035/2040"><input type="radio" name="scen" value="hev"> HEV</label>
       <span style="margin-left:8px">·</span>
-      <label style="margin-left:6px"><input type="radio" name="st" value="e" checked> existing</label>
+      <label style="margin-left:6px"><input type="radio" name="st" value="e"> existing</label>
       <label><input type="radio" name="st" value="p"> with plans</label>
-      <label title="Colors the change in N-1 headroom that the published plans make at this horizon"><input type="radio" name="st" value="delta"> plan effect</label>
+      <label title="Colors the change in N-1 headroom that the published plans make at this horizon"><input type="radio" name="st" value="delta" checked> plan effect</label>
     </div>
+    <div id="readout" style="font-size:11px; color:var(--muted); margin-top:1px;"></div>
   </div>
 </header>
 <div style="position:relative; min-height:0;">
@@ -91,7 +93,7 @@
 </div>
 <script>
 const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
-const state = { year: 2030, scen: "ntp", st: "e" };
+const state = { year: 2030, scen: "ntp", st: "delta", ddelta: false };
 const HORIZONS = { ntp: [2030, 2035, 2040], lev: [2035, 2040], hev: [2035, 2040] };
 const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
 let TOTALS = null;
@@ -124,7 +126,8 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.AttributionControl({
   customAttribution: "Grid data &copy; OpenStreetMap contributors ODbL 1.0 · scenario shaping: " +
-    "ENTSO-E TYNDP 2026 (CC BY 4.0) · screening-grade, not operational",
+    "ENTSO-E TYNDP 2026 (CC BY 4.0) · TYNDP project layer &copy; ENTSO-E (source acknowledged, " +
+    "preliminary draft portfolio) · screening-grade, not operational",
 }));
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 new ResizeObserver(() => map.resize()).observe(document.getElementById("map"));
@@ -139,8 +142,24 @@ const sfx = (st) => `${state.scen}_${horizonFor(state.year, state.scen)}_${st}`;
 const hField = (st) => `h_${sfx(st)}`;
 const uField = (st) => `u_${sfx(st)}`;
 
-function colorExpr() {
+function absColorExpr(st) {
+  const expr = ["case"];
+  for (const c of CLASSES.slice(0, -1)) {
+    expr.push(["<", ["coalesce", ["get", hField(st)], 9999], c.max], c.color);
+  }
+  expr.push(CLASSES[CLASSES.length - 1].color);
+  return expr;
+}
+function absWidthExpr(st) {
+  const u = ["min", 0.4, ["coalesce", ["get", uField(st)], 0]];
+  return ["interpolate", ["linear"], ["zoom"],
+          4, ["+", 0.8, ["*", 9, u]], 8, ["+", 1.4, ["*", 16, u]], 11, ["+", 2.2, ["*", 24, u]]];
+}
+// In "plan effect" mode, existing lines color by the CHANGE plans make, while
+// planned lines color by the headroom they ARRIVE with (they have no baseline).
+function colorExpr(layerKind) {
   if (state.st === "delta") {
+    if (layerKind === "planned") return absColorExpr("p");
     const d = ["-", ["coalesce", ["get", hField("p")], 999],
                     ["coalesce", ["get", hField("e")], 999]];
     const expr = ["case"];
@@ -148,34 +167,30 @@ function colorExpr() {
     expr.push(DELTA_CLASSES[DELTA_CLASSES.length - 1].color);
     return expr;
   }
-  const expr = ["case"];
-  for (const c of CLASSES.slice(0, -1)) {
-    expr.push(["<", ["coalesce", ["get", hField(state.st)], 9999], c.max], c.color);
-  }
-  expr.push(CLASSES[CLASSES.length - 1].color);
-  return expr;
+  return absColorExpr(state.st);
 }
-function widthExpr() {
+function widthExpr(layerKind) {
   if (state.st === "delta") {
+    if (layerKind === "planned") return absWidthExpr("p");
     const d = ["abs", ["-", ["coalesce", ["get", hField("p")], 0],
                             ["coalesce", ["get", hField("e")], 0]]];
     const u = ["min", 0.5, ["*", 0.06, d]];
     return ["interpolate", ["linear"], ["zoom"],
             4, ["+", 0.8, ["*", 7, u]], 8, ["+", 1.4, ["*", 13, u]], 11, ["+", 2.2, ["*", 20, u]]];
   }
-  const u = ["min", 0.4, ["coalesce", ["get", uField(state.st)], 0]];
-  return ["interpolate", ["linear"], ["zoom"],
-          4, ["+", 0.8, ["*", 9, u]], 8, ["+", 1.4, ["*", 16, u]], 11, ["+", 2.2, ["*", 24, u]]];
+  return absWidthExpr(state.st);
 }
 function stressFilter(kind) {
   const base = ["all", ["==", ["get", "kind"], kind],
                 ["!=", ["get", "bridge"], true]];
-  if (state.st === "delta") {
+  if (state.st === "delta" && kind === "line") {
     // require both states present AND below the 999-GW headroom cap, so cap
     // artifacts never masquerade as plan effects
     base.push(["has", hField("e")], ["has", hField("p")],
               ["<", ["coalesce", ["get", hField("e")], 9999], 998],
               ["<", ["coalesce", ["get", hField("p")], 9999], 998]);
+  } else if (state.st === "delta") {
+    base.push(["has", hField("p")]);
   } else {
     base.push(["has", hField(state.st)]);
   }
@@ -183,6 +198,10 @@ function stressFilter(kind) {
 }
 
 // ---- context (mirrored from the public map) ----
+function tyndpYearFilter() {
+  return ["any", ["!", ["has", "year"]],
+          ["<=", ["get", "year"], state.year]];
+}
 function datedFilter(kind) {
   return kind === "rest"
     ? ["any", ["!", ["has", "service_year_min"]],
@@ -215,6 +234,23 @@ function circleRadius(mwExpr, k) {
   return ["interpolate", ["linear"], ["zoom"],
           4, ["*", 0.5, base], 7, base, 10, ["*", 1.8, base]];
 }
+// Variant-difference view: demand circles sized by |scenario - NT+| MW and
+// colored by sign, so the economy variants' effect is visible rather than a
+// few-percent radius change. Honest framing: it is literally TYNDP deltas.
+function demandDeltaExprs() {
+  const h = horizonFor(state.year, state.scen);
+  const radius = [], color = [];
+  for (const [c, scens] of Object.entries(TOTALS.demand_avg_mw)) {
+    const v = scens[state.scen] && scens[state.scen][h];
+    const n = scens.ntp && scens.ntp[h];
+    if (v == null || n == null) continue;
+    radius.push(c, ["*", ["get", "d_share"], Math.abs(v - n)]);
+    color.push(c, v >= n ? "#dc2626" : "#2563eb");
+  }
+  if (!radius.length) return null;
+  return { mw: ["match", ["get", "country"], ...radius, 0],
+           color: ["match", ["get", "country"], ...color, "#9ca3af"] };
+}
 
 let setupDone = false;
 async function setup() {
@@ -235,6 +271,18 @@ async function setup() {
     paint: { "line-color": "#c3cbd1", "line-width": 0.7 } });
 
   if (TOTALS) {
+    const groupColor = ["match", ["get", "group"],
+                        ...Object.entries(GROUP_COLORS).flat(), "#9ca3af"];
+    map.addLayer({ id: "plant_poly_gen", type: "fill", source: "context",
+      "source-layer": "plant_polys", minzoom: 7, layout: { visibility: "none" },
+      filter: ["!=", ["get", "group"], "battery"],
+      paint: { "fill-color": groupColor, "fill-opacity": 0.22,
+               "fill-outline-color": groupColor } });
+    map.addLayer({ id: "plant_poly_flex", type: "fill", source: "context",
+      "source-layer": "plant_polys", minzoom: 7, layout: { visibility: "none" },
+      filter: ["==", ["get", "group"], "battery"],
+      paint: { "fill-color": "#db2777", "fill-opacity": 0.25,
+               "fill-outline-color": "#db2777" } });
     map.addLayer({ id: "demand_places", type: "circle", source: "context",
       "source-layer": "places", minzoom: 4, layout: { visibility: "none" },
       paint: { "circle-color": "#0284c7", "circle-opacity": 0.25,
@@ -242,6 +290,7 @@ async function setup() {
                "circle-stroke-width": 1, "circle-radius": circleRadius(demandMWExpr(), 0.42) } });
     map.addLayer({ id: "gen_plants", type: "circle", source: "context",
       "source-layer": "plants", minzoom: 4, layout: { visibility: "none" },
+      filter: ["!=", ["get", "group"], "battery"],
       paint: { "circle-color": ["match", ["get", "group"],
                  ...Object.entries(GROUP_COLORS).flat(), "#9ca3af"],
                "circle-opacity": 0.35,
@@ -249,6 +298,13 @@ async function setup() {
                  ...Object.entries(GROUP_COLORS).flat(), "#9ca3af"],
                "circle-stroke-opacity": 0.6, "circle-stroke-width": 0.8,
                "circle-radius": circleRadius(genMWExpr(), 0.5) } });
+    map.addLayer({ id: "flex_batteries", type: "circle", source: "context",
+      "source-layer": "plants", minzoom: 4, layout: { visibility: "none" },
+      filter: ["==", ["get", "group"], "battery"],
+      paint: { "circle-color": "#db2777", "circle-opacity": 0.45,
+               "circle-stroke-color": "#db2777", "circle-stroke-opacity": 0.75,
+               "circle-stroke-width": 1,
+               "circle-radius": circleRadius(genMWExpr(), 0.6) } });
   }
 
   map.addLayer({ id: "bridges", type: "line", source: "stress", "source-layer": "branches",
@@ -257,10 +313,24 @@ async function setup() {
              "line-opacity": 0.6 } });
   map.addLayer({ id: "stress_existing", type: "line", source: "stress", "source-layer": "branches",
     filter: stressFilter("line"),
-    paint: { "line-color": colorExpr(), "line-width": widthExpr() } });
+    paint: { "line-color": colorExpr("line"), "line-width": widthExpr("line") } });
   map.addLayer({ id: "stress_planned", type: "line", source: "stress", "source-layer": "branches",
-    filter: stressFilter("planned_line"), layout: { visibility: "none" },
-    paint: { "line-color": colorExpr(), "line-dasharray": [2.2, 1.6], "line-width": widthExpr() } });
+    filter: stressFilter("planned_line"),
+    paint: { "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
+             "line-width": widthExpr("planned") } });
+
+  map.addSource("tyndp", { type: "geojson", data: "tyndp_projects_2026.geojson" });
+  map.addLayer({ id: "tyndp_lines", type: "line", source: "tyndp",
+    filter: ["all", ["==", ["geometry-type"], "LineString"], tyndpYearFilter()],
+    layout: { visibility: "none" },
+    paint: { "line-color": "#06b6d4", "line-dasharray": [4, 1.6],
+             "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.6, 8, 2.6, 12, 4.0] } });
+  map.addLayer({ id: "tyndp_points", type: "circle", source: "tyndp",
+    filter: ["all", ["==", ["geometry-type"], "Point"], tyndpYearFilter()],
+    layout: { visibility: "none" },
+    paint: { "circle-color": "#06b6d4", "circle-opacity": 0.85,
+             "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 7],
+             "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
 
   map.addLayer({ id: "proj_lines", type: "line", source: "context", "source-layer": "projects",
     filter: ["all", ["==", ["geometry-type"], "LineString"], datedFilter("dated")],
@@ -299,11 +369,32 @@ function buildLegends() {
   legendRow(dev, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
             "Planned projects by year", ["proj_lines", "proj_points"], false,
             "Public development plans; violet = shown by selected year");
+  legendRow(dev, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
+            "TYNDP 2026 projects (ENTSO-E)", ["tyndp_lines", "tyndp_points"], false,
+            "ENTSO-E TYNDP 2026 draft project portfolio (preliminary) - source acknowledged; commissioning-year gated by the slider; storage projects as dots");
   if (TOTALS) {
     legendRow(dev, `<span class="swatch dot" style="background:#0284c7;opacity:.6"></span>`,
               "TYNDP demand at OSM places", ["demand_places"], false);
     legendRow(dev, `<span class="swatch dot" style="background:linear-gradient(120deg,#0d9488 30%,#f59e0b 30% 60%,#2563eb 60%)"></span>`,
-              "TYNDP generation at OSM plants", ["gen_plants"], false);
+              "TYNDP generation at OSM plants", ["gen_plants", "plant_poly_gen"], false);
+    legendRow(dev, `<span class="swatch dot" style="background:#db2777;opacity:.7"></span>`,
+              "Flexibility — batteries (TYNDP GW)", ["flex_batteries", "plant_poly_flex"], false,
+              "Battery storage at OSM sites, scaled by national TYNDP 2026 battery power (GW) — shown separately from generation");
+    const ddRow = document.createElement("label");
+    ddRow.className = "row"; ddRow.id = "ddelta-row";
+    ddRow.title = "Sizes demand circles by |variant − NT+| MW and colors by sign (red = higher than NT+, blue = lower). Needs LEV or HEV selected.";
+    ddRow.innerHTML = `<input type="checkbox"><span class="swatch dot" style="background:linear-gradient(90deg,#2563eb 50%,#dc2626 50%)"></span><span>Demand Δ vs NT+</span>`;
+    ddRow.querySelector("input").addEventListener("change", e => {
+      state.ddelta = e.target.checked;
+      if (state.ddelta) {          // Δ view needs the demand layer on
+        toggle(["demand_places"], true);
+        document.querySelectorAll("#legend-dev .row").forEach(r => {
+          if (r.textContent.includes("demand at OSM places"))
+            r.querySelector("input").checked = true;
+        });
+      }
+      refresh(); });
+    dev.appendChild(ddRow);
   }
   renderStressLegend();
 }
@@ -320,6 +411,12 @@ function renderStressLegend() {
     row.innerHTML = `<span class="swatch" style="border-color:${c.color}"></span>${c.label}`;
     legend.appendChild(row);
   }
+  if (state.st === "delta") {
+    const note = document.createElement("div");
+    note.style.cssText = "color:var(--muted); margin-top:4px;";
+    note.textContent = "Dashed planned lines: colored by the headroom they arrive with (absolute scale).";
+    legend.appendChild(note);
+  }
 }
 
 function refresh() {
@@ -331,23 +428,45 @@ function refresh() {
     const ok = r.value === "ntp" || state.year >= 2033;
     r.parentElement.classList.toggle("off", !ok);
   });
-  for (const id of ["stress_existing", "stress_planned"]) {
-    map.setPaintProperty(id, "line-color", colorExpr());
-    map.setPaintProperty(id, "line-width", widthExpr());
-  }
+  map.setPaintProperty("stress_existing", "line-color", colorExpr("line"));
+  map.setPaintProperty("stress_existing", "line-width", widthExpr("line"));
+  map.setPaintProperty("stress_planned", "line-color", colorExpr("planned"));
+  map.setPaintProperty("stress_planned", "line-width", widthExpr("planned"));
   map.setFilter("stress_existing", stressFilter("line"));
   map.setFilter("stress_planned", stressFilter("planned_line"));
   map.setLayoutProperty("stress_planned", "visibility",
-    state.st === "p" ? "visible" : "none");
+    state.st === "e" ? "none" : "visible");
   for (const [id, kind] of [["proj_lines", "dated"], ["proj_points", "dated"]]) {
     if (!map.getLayer(id)) continue;
     const gf = map.getFilter(id);
     map.setFilter(id, [gf[0], gf[1], datedFilter(kind)]);
   }
-  if (TOTALS && map.getLayer("demand_places")) {
-    map.setPaintProperty("demand_places", "circle-radius", circleRadius(demandMWExpr(), 0.42));
-    map.setPaintProperty("gen_plants", "circle-radius", circleRadius(genMWExpr(), 0.5));
+  for (const id of ["tyndp_lines", "tyndp_points"]) {
+    if (!map.getLayer(id)) continue;
+    const gf = map.getFilter(id);
+    map.setFilter(id, [gf[0], gf[1], tyndpYearFilter()]);
   }
+  if (TOTALS && map.getLayer("demand_places")) {
+    const dd = state.ddelta && state.scen !== "ntp" ? demandDeltaExprs() : null;
+    map.setPaintProperty("demand_places", "circle-radius",
+      dd ? circleRadius(dd.mw, 1.4) : circleRadius(demandMWExpr(), 0.42));
+    map.setPaintProperty("demand_places", "circle-color", dd ? dd.color : "#0284c7");
+    map.setPaintProperty("demand_places", "circle-stroke-color", dd ? dd.color : "#0284c7");
+    map.setPaintProperty("gen_plants", "circle-radius", circleRadius(genMWExpr(), 0.5));
+    if (map.getLayer("flex_batteries"))
+      map.setPaintProperty("flex_batteries", "circle-radius", circleRadius(genMWExpr(), 0.6));
+    const ro = (TOTALS.readout[state.scen] || {})[h];
+    const base = (TOTALS.readout.ntp || {})[h];
+    let text = ro ? `Europe: ~${ro.demand_avg_gw.toLocaleString()} GW avg demand · ` +
+      `${ro.generation_gw.toLocaleString()} GW capacity (${SCEN_LABEL[state.scen]} ${h})` : "";
+    if (ro && base && state.scen !== "ntp") {
+      const pct = 100 * (ro.demand_avg_gw - base.demand_avg_gw) / base.demand_avg_gw;
+      text += ` · demand ${pct >= 0 ? "+" : ""}${pct.toFixed(1)}% vs NT+ (capacity mix ≈ identical)`;
+    }
+    document.getElementById("readout").textContent = text;
+  }
+  const ddRow = document.getElementById("ddelta-row");
+  if (ddRow) ddRow.classList.toggle("off", state.scen === "ntp");
   renderStressLegend();
 }
 function wireControls() {
@@ -363,7 +482,9 @@ function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").re
 
 function wirePopups() {
   const layers = () => ["stress_existing", "stress_planned", "bridges",
-                        "proj_lines", "proj_points", "demand_places", "gen_plants"]
+                        "tyndp_lines", "tyndp_points",
+                        "proj_lines", "proj_points", "demand_places", "gen_plants",
+                        "flex_batteries", "plant_poly_gen", "plant_poly_flex"]
                        .filter(id => map.getLayer(id));
   map.on("click", e => {
     const feats = map.queryRenderedFeatures(e.point, { layers: layers() });
@@ -372,7 +493,15 @@ function wirePopups() {
     const p = f.properties;
     const h = horizonFor(state.year, state.scen);
     let title, rows;
-    if (f.layer && f.layer.id === "bridges") {
+    if (f.source === "tyndp") {
+      title = p.name || "TYNDP project";
+      rows = [["type", p.kind + (p.typeOfElement ? " · " + p.typeOfElement : "")],
+              ["commissioning", p.year || p.commissioningYear || "—"],
+              ["status", p.statusName], ["TSOs", p.tsos],
+              ["countries", p.countries],
+              ["PCI corridor", p.pciCorridor],
+              ["source", p.source]].filter(([, v]) => v);
+    } else if (f.layer && f.layer.id === "bridges") {
       title = p.name || p.fid;
       rows = [["type", "connection radial (bridge)"],
               ["screening", "its outage islands the network — flagged, not scored"],
@@ -399,13 +528,20 @@ function wirePopups() {
               ["dates verbatim", p.dates_verbatim], ["geometry", p.geometry_kind],
               ["source", p.source_url]].filter(([, v]) => v);
     } else if (f.sourceLayer === "places" && TOTALS) {
-      const t = (TOTALS.demand_avg_mw[p.country] || {})[state.scen];
+      const scens = TOTALS.demand_avg_mw[p.country] || {};
+      const t = scens[state.scen];
       const mw = t && t[h] ? Math.round(p.d_share * t[h]).toLocaleString() + " MW" : "—";
       title = p.name || "Populated place";
       rows = [["population (OSM)", (+p.population).toLocaleString()],
-              [`avg demand, ${SCEN_LABEL[state.scen]} ${h}`, mw],
-              ["provenance", "inferred: TYNDP 2026 x OSM population weights"]];
-    } else if (f.sourceLayer === "plants" && TOTALS) {
+              [`avg demand, ${SCEN_LABEL[state.scen]} ${h}`, mw]];
+      const n = scens.ntp && scens.ntp[h];
+      if (state.scen !== "ntp" && t && t[h] && n)
+        rows.push(["vs NT+", (t[h] >= n ? "+" : "") +
+                   (100 * (t[h] - n) / n).toFixed(1) + "% (" +
+                   (t[h] - n >= 0 ? "+" : "") +
+                   Math.round(p.d_share * (t[h] - n)).toLocaleString() + " MW here)"]);
+      rows.push(["provenance", "inferred: TYNDP 2026 x OSM population weights"]);
+    } else if ((f.sourceLayer === "plants" || f.sourceLayer === "plant_polys") && TOTALS) {
       const t = ((TOTALS.generation_capacity_mw[p.country] || {})[p.group] || {})[state.scen];
       const mw = t && t[h] ? Math.round(p.g_share * t[h]).toLocaleString() + " MW" : "—";
       title = p.name || "Power plant";
