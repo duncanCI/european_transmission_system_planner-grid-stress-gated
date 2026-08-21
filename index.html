@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>European Grid N-1 Stress Screen (v4)</title>
+<link rel="icon" href="data:,">
+<link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
+<script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+<script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
+<style>
+  :root { --paper:#f5f7f6; --ink:#172026; --muted:#59666c; --rule:#c9d1cf; --panel:rgba(245,247,246,.97); }
+  * { box-sizing:border-box; }
+  html,body { height:100%; margin:0; color:var(--ink); background:var(--paper);
+              font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+  body { display:grid; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden; }
+  header { z-index:4; padding:10px 16px; border-bottom:1px solid var(--rule); background:var(--panel);
+           display:flex; justify-content:space-between; align-items:center; gap:18px; flex-wrap:wrap; }
+  h1 { margin:0; font:600 18px/1.2 Georgia,serif; }
+  .subtitle { color:var(--muted); font-size:12px; margin-top:2px; max-width:900px; }
+  .hold { background:#7c2d12; color:#fff7ed; font-size:12px; padding:6px 16px; }
+  .ctl { font-size:12px; color:var(--muted); display:flex; gap:16px; align-items:center; flex-wrap:wrap; }
+  .ctl label { display:flex; gap:4px; align-items:center; }
+  .ctl input { accent-color:#b91c1c; margin:0; }
+  #map { width:100%; height:100%; }
+  .panel { position:absolute; top:12px; left:12px; z-index:3; width:250px; background:var(--panel);
+           border:1px solid var(--rule); border-radius:8px; padding:10px 12px; font-size:12.5px;
+           max-height:calc(100% - 48px); overflow:auto; box-shadow:0 1px 4px rgba(0,0,0,.12); }
+  .panel h2 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
+  .row { display:flex; align-items:center; gap:7px; padding:2.5px 0; }
+  .swatch { width:22px; height:0; border-top:4px solid; flex:none; }
+  .note { color:var(--muted); margin-top:6px; line-height:1.45; }
+  .maplibregl-popup-content { font:12px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
+                              max-height:280px; overflow:auto; min-width:230px; }
+  .maplibregl-popup-content td { padding:1.5px 6px 1.5px 0; vertical-align:top; }
+  .maplibregl-popup-content td:first-child { color:var(--muted); white-space:nowrap; }
+  .ptitle { font-weight:700; margin-bottom:4px; }
+</style>
+</head>
+<body>
+<div class="hold" id="holdbar">
+  Screening-grade N-1 stress screen — HOLD: validation gates not signed off. Post-fault headroom under
+  scenario-shaped 1&nbsp;GW transfers only. No forecast loading, no energy-not-served, no
+  voltage/stability/fault-level conclusions, no reinforcement sizing, no delivery-year promises.
+</div>
+<header>
+  <div>
+    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4 · NT+</span></h1>
+    <div class="subtitle">
+      Worst single-contingency post-fault loading per GW of TYNDP-2026-shaped transfer, on the open
+      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Typed parameters,
+      screening only — not operational data.
+    </div>
+  </div>
+  <div class="ctl">
+    <span>Horizon:</span>
+    <label><input type="radio" name="yr" value="2030" checked> 2030</label>
+    <label><input type="radio" name="yr" value="2035"> 2035</label>
+    <label><input type="radio" name="yr" value="2040"> 2040</label>
+    <span style="margin-left:10px">Network:</span>
+    <label><input type="radio" name="st" value="e" checked> existing</label>
+    <label><input type="radio" name="st" value="p"> with published plans</label>
+  </div>
+</header>
+<div style="position:relative; min-height:0;">
+  <div id="map"></div>
+  <div class="panel">
+    <h2>N-1 headroom (GW of shaped transfer to first post-fault limit)</h2>
+    <div id="legend"></div>
+    <div class="note">Dashed = planned line from a public development plan (typed parameters,
+      schematic alignment). Dotted grey = connection radials (bridges) — flagged, not scored.
+      Click any branch for its binding contingency and driving transfer.</div>
+  </div>
+</div>
+<script>
+const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
+const state = { yr: "2030", st: "e" };
+
+const CLASSES = [
+  { max: 3,        color: "#b91c1c", label: "< 3 GW" },
+  { max: 6,        color: "#ea580c", label: "3–6 GW" },
+  { max: 12,       color: "#eab308", label: "6–12 GW" },
+  { max: 25,       color: "#16a34a", label: "12–25 GW" },
+  { max: Infinity, color: "#9ca3af", label: "≥ 25 GW" },
+];
+
+const protocol = new pmtiles.Protocol();
+maplibregl.addProtocol("pmtiles", protocol.tile);
+const map = new maplibregl.Map({
+  container: "map",
+  style: "https://tiles.openfreemap.org/styles/positron",
+  center: [8.5, 52.5], zoom: 4, attributionControl: false,
+});
+map.addControl(new maplibregl.AttributionControl({
+  customAttribution: "Grid data &copy; OpenStreetMap contributors ODbL 1.0 · scenario shaping: " +
+    "ENTSO-E TYNDP 2026 (CC BY 4.0) · screening-grade, not operational",
+}));
+map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
+new ResizeObserver(() => map.resize()).observe(document.getElementById("map"));
+
+const hField = () => `h_${state.yr}_${state.st}`;
+const uField = () => `u_${state.yr}_${state.st}`;
+
+function colorExpr() {
+  const expr = ["case"];
+  for (const c of CLASSES.slice(0, -1)) {
+    expr.push(["<", ["coalesce", ["get", hField()], 9999], c.max], c.color);
+  }
+  expr.push(CLASSES[CLASSES.length - 1].color);
+  return expr;
+}
+function widthExpr() {
+  const u = ["min", 0.4, ["coalesce", ["get", uField()], 0]];
+  return ["interpolate", ["linear"], ["zoom"],
+          4, ["+", 0.8, ["*", 9, u]], 8, ["+", 1.4, ["*", 16, u]], 11, ["+", 2.2, ["*", 24, u]]];
+}
+const hasData = () => ["has", `h_${state.yr}_${state.st}`];
+
+let setupDone = false;
+function setup() {
+  if (setupDone) return; setupDone = true;
+  map.addSource("base", { type: "vector",
+    url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_linework.pmtiles" });
+  map.addSource("stress", { type: "vector", url: "pmtiles://stress_v4.pmtiles" });
+
+  map.addLayer({ id: "base_grid", type: "line", source: "base", "source-layer": "ac_lines",
+    paint: { "line-color": "#c3cbd1", "line-width": 0.7 } });
+
+  map.addLayer({ id: "bridges", type: "line", source: "stress", "source-layer": "branches",
+    filter: ["all", ["==", ["get", "bridge"], true]],
+    paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6], "line-width": 1.0,
+             "line-opacity": 0.6 } });
+
+  map.addLayer({ id: "stress_existing", type: "line", source: "stress", "source-layer": "branches",
+    filter: ["all", ["==", ["get", "kind"], "line"], ["!=", ["get", "bridge"], true], hasData()],
+    paint: { "line-color": colorExpr(), "line-width": widthExpr() } });
+
+  map.addLayer({ id: "stress_planned", type: "line", source: "stress", "source-layer": "branches",
+    filter: ["all", ["==", ["get", "kind"], "planned_line"], hasData()],
+    paint: { "line-color": colorExpr(), "line-dasharray": [2.2, 1.6], "line-width": widthExpr() } });
+
+  const legend = document.getElementById("legend");
+  for (const c of CLASSES) {
+    const row = document.createElement("div");
+    row.className = "row";
+    row.innerHTML = `<span class="swatch" style="border-color:${c.color}"></span>${c.label}`;
+    legend.appendChild(row);
+  }
+  wireControls();
+  wirePopups();
+}
+map.once("style.load", setup);
+map.once("load", setup);
+if (map.isStyleLoaded()) setup();
+
+function refresh() {
+  for (const id of ["stress_existing", "stress_planned"]) {
+    map.setPaintProperty(id, "line-color", colorExpr());
+    map.setPaintProperty(id, "line-width", widthExpr());
+  }
+  map.setFilter("stress_existing",
+    ["all", ["==", ["get", "kind"], "line"], ["!=", ["get", "bridge"], true], hasData()]);
+  map.setFilter("stress_planned",
+    ["all", ["==", ["get", "kind"], "planned_line"], hasData()]);
+  map.setLayoutProperty("stress_planned", "visibility",
+    state.st === "p" ? "visible" : "none");
+}
+function wireControls() {
+  document.querySelectorAll("input[name=yr]").forEach(r =>
+    r.addEventListener("change", () => { state.yr = r.value; refresh(); }));
+  document.querySelectorAll("input[name=st]").forEach(r =>
+    r.addEventListener("change", () => { state.st = r.value; refresh(); }));
+  refresh();
+}
+
+function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+
+function wirePopups() {
+  map.on("click", e => {
+    const feats = map.queryRenderedFeatures(e.point,
+      { layers: ["stress_existing", "stress_planned", "bridges"] });
+    if (!feats.length) return;
+    const p = feats[0].properties;
+    const sfx = `${state.yr}_${state.st}`;
+    const rows = [
+      ["headroom", p[`h_${sfx}`] != null ? p[`h_${sfx}`] + " GW of shaped transfer" : "—"],
+      ["worst N-1 loading", p[`u_${sfx}`] != null ? (p[`u_${sfx}`]*100).toFixed(1) + "% of typed rating per GW" : "—"],
+      ["binding contingency", p[`b_${sfx}`] || "—"],
+      ["driving transfer", p[`d_${sfx}`] || "—"],
+      ["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"],
+      ["rating basis", "inferred: v23 typed s_nom " + (p.s_nom_mva|0) + " MVA"],
+      ["evidence", "inferred: typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"],
+    ];
+    new maplibregl.Popup({ maxWidth: "330px" }).setLngLat(e.lngLat)
+      .setHTML(`<div class="ptitle">${esc(p.name || p.fid)}</div><table>` +
+        rows.map(([k, v]) => `<tr><td>${k}</td><td>${esc(v)}</td></tr>`).join("") + "</table>")
+      .addTo(map);
+  });
+  map.on("mousemove", e => {
+    const feats = map.queryRenderedFeatures(e.point,
+      { layers: ["stress_existing", "stress_planned"] });
+    map.getCanvas().style.cursor = feats.length ? "pointer" : "";
+  });
+}
+</script>
+</body>
+</html>
