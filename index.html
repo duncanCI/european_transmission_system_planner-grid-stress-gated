@@ -51,15 +51,19 @@
   Screening-grade N-1 stress screen — HOLD: validation gates not signed off. Post-fault headroom under
   scenario-shaped 1&nbsp;GW transfers only. No forecast loading, no energy-not-served, no
   voltage/stability/fault-level conclusions, no reinforcement sizing, no delivery-year promises.
+  DC links carry no flow and DC-link outages are not screened — stress in GB, the island of Ireland,
+  the Nordics and Baltic import corridors is understated.
 </div>
 <header>
   <div>
     <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4</span></h1>
     <div class="subtitle">
       Worst single-contingency post-fault loading per GW of TYNDP-2026-shaped transfer, on the open
-      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Headroom is
-      <b>per GW and scale-free</b>: moving the year changes the transfer shape and — with plans on —
-      the network itself, not the transfer volume. The "plan effect" view colors what the published
+      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Screen scope:
+      <b>&ge;220&nbsp;kV, 50&nbsp;Hz AC</b> per synchronous area — the grey linework beneath is the
+      full 50–750&nbsp;kV dataset, context only. Headroom is <b>per GW and scale-free</b> (not
+      NTC/boundary capability — see Method &amp; limits): moving the year changes the transfer shape
+      and — with plans on — the network itself. The "plan effect" view colors what the published
       plans change.
     </div>
   </div>
@@ -87,8 +91,32 @@
     <h2 style="margin-top:10px">Development &amp; scenarios</h2>
     <div id="legend-dev"></div>
     <div class="note">Dashed violet = planned line from a public development plan (schematic —
-      not a route alignment; promoter-stated years). Dotted grey = connection radials (bridges),
+      not a route alignment; promoter-stated years); teal dash = DC / interconnector project,
+      shown for context, never flow-modelled. Dotted grey = connection radials (bridges),
       flagged not scored. Click any branch for its binding contingency and driving transfer.</div>
+    <details style="margin-top:8px; border-top:1px solid var(--rule); padding-top:8px;">
+      <summary style="cursor:pointer; font-weight:600; font-size:12px;">Method &amp; limits (read before quoting)</summary>
+      <div class="note">
+        <p><b>Not NTC.</b> Headroom is the GW of ONE shaped transfer an otherwise unloaded network
+        absorbs before the first post-fault thermal limit. There is no dispatch base case — a corridor
+        loaded in every credible market hour shows the same headroom as an idle one. Not NTC, TTC or
+        boundary capability.</p>
+        <p><b>N-1 of what.</b> Single outage of each modelled AC branch (line record or ≥220 kV
+        transformer) within its synchronous area. No generator, busbar, DC-link or common-tower
+        double-circuit contingencies. Collapsed double circuits are modelled as one representative
+        circuit (conservative on those corridors).</p>
+        <p><b>Envelope colors.</b> Each branch shows its own worst case over all shaped transfer
+        directions and all outages — neighbouring reds need not bind together. Click for the binding
+        pair.</p>
+        <p><b>Scope.</b> ≥220 kV, 50 Hz AC per synchronous area. The grey linework beneath is the full
+        50–750 kV dataset, context only — unscreened.</p>
+        <p><b>Shaping.</b> Transfers are shaped by TYNDP national totals mapped to today's OSM plant
+        sites and population-weighted demand; future new-build sites and large point loads are not
+        represented.</p>
+        <p><b>Ratings.</b> DC MW flow vs static typed continuous MVA rating (pf ≈ 1); no seasonal or
+        short-term post-fault emergency ratings — conservative vs operational practice.</p>
+      </div>
+    </details>
   </div>
 </div>
 <script>
@@ -99,9 +127,10 @@ const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
 let TOTALS = null;
 
 const CLASSES = [
-  { max: 3,        color: "#b91c1c", label: "< 3 GW" },
-  { max: 6,        color: "#ea580c", label: "3–6 GW" },
-  { max: 12,       color: "#eab308", label: "6–12 GW" },
+  { max: 1,        color: "#b91c1c", label: "< 1 GW — fails the 1 GW shaped N-1" },
+  { max: 3,        color: "#ea580c", label: "1–3 GW (small-system scale)" },
+  { max: 6,        color: "#f59e0b", label: "3–6 GW" },
+  { max: 12,       color: "#a8b820", label: "6–12 GW" },
   { max: 25,       color: "#16a34a", label: "12–25 GW" },
   { max: Infinity, color: "#9ca3af", label: "≥ 25 GW" },
 ];
@@ -185,10 +214,15 @@ function stressFilter(kind) {
                 ["!=", ["get", "bridge"], true]];
   if (state.st === "delta" && kind === "line") {
     // require both states present AND below the 999-GW headroom cap, so cap
-    // artifacts never masquerade as plan effects
+    // artifacts never masquerade as plan effects; and gate on PRACTICAL
+    // relevance (min headroom <= 20 GW) with a real delta (> 0.1 GW), so
+    // float noise between unloaded branches never paints color
+    const he = ["coalesce", ["get", hField("e")], 9999];
+    const hp = ["coalesce", ["get", hField("p")], 9999];
     base.push(["has", hField("e")], ["has", hField("p")],
-              ["<", ["coalesce", ["get", hField("e")], 9999], 998],
-              ["<", ["coalesce", ["get", hField("p")], 9999], 998]);
+              ["<", he, 998], ["<", hp, 998],
+              ["<", ["min", he, hp], 20],
+              [">", ["abs", ["-", hp, he]], 0.1]);
   } else if (state.st === "delta") {
     base.push(["has", hField("p")]);
   } else {
@@ -265,7 +299,9 @@ async function setup() {
     url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_linework.pmtiles" });
   map.addSource("context", { type: "vector",
     url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_context.pmtiles" });
-  map.addSource("stress", { type: "vector", url: "pmtiles://stress_v4.pmtiles" });
+  // bump ?v= on every tile rebuild: busts stale HTTP range caches
+  map.addSource("stress", { type: "vector",
+    url: "pmtiles://stress_v4.pmtiles?v=20260821-3" });
 
   map.addLayer({ id: "base_grid", type: "line", source: "base", "source-layer": "ac_lines",
     paint: { "line-color": "#c3cbd1", "line-width": 0.7 } });
@@ -320,6 +356,11 @@ async function setup() {
              "line-width": widthExpr("planned") } });
 
   map.addSource("tyndp", { type: "geojson", data: "tyndp_projects_2026.geojson" });
+  map.addLayer({ id: "tyndp_polys", type: "fill", source: "tyndp",
+    filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
+    layout: { visibility: "none" },
+    paint: { "fill-color": "#06b6d4", "fill-opacity": 0.12,
+             "fill-outline-color": "#06b6d4" } });
   map.addLayer({ id: "tyndp_lines", type: "line", source: "tyndp",
     filter: ["all", ["==", ["geometry-type"], "LineString"], tyndpYearFilter()],
     layout: { visibility: "none" },
@@ -332,10 +373,12 @@ async function setup() {
              "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 7],
              "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
 
+  const projColor = ["case", ["==", ["coalesce", ["get", "is_dc"], false], true],
+                     "#0e7490", "#7c3aed"];
   map.addLayer({ id: "proj_lines", type: "line", source: "context", "source-layer": "projects",
     filter: ["all", ["==", ["geometry-type"], "LineString"], datedFilter("dated")],
     layout: { visibility: "none" },
-    paint: { "line-color": "#7c3aed", "line-dasharray": [2.4, 1.8],
+    paint: { "line-color": projColor, "line-dasharray": [2.4, 1.8],
              "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 2.0, 12, 3.4] } });
   map.addLayer({ id: "proj_points", type: "circle", source: "context", "source-layer": "projects",
     filter: ["all", ["==", ["geometry-type"], "Point"], datedFilter("dated")],
@@ -370,8 +413,9 @@ function buildLegends() {
             "Planned projects by year", ["proj_lines", "proj_points"], false,
             "Public development plans; violet = shown by selected year");
   legendRow(dev, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
-            "TYNDP 2026 projects (ENTSO-E)", ["tyndp_lines", "tyndp_points"], false,
-            "ENTSO-E TYNDP 2026 draft project portfolio (preliminary) - source acknowledged; commissioning-year gated by the slider; storage projects as dots");
+            "TYNDP 2026 projects (ENTSO-E)",
+            ["tyndp_lines", "tyndp_points", "tyndp_polys"], false,
+            "ENTSO-E TYNDP 2026 draft portfolio (preliminary) - source acknowledged; year-gated by the slider; storage as dots; translucent fills are STUDY CORRIDORS, not routes; not represented in the flow model");
   if (TOTALS) {
     legendRow(dev, `<span class="swatch dot" style="background:#0284c7;opacity:.6"></span>`,
               "TYNDP demand at OSM places", ["demand_places"], false);
@@ -404,7 +448,7 @@ function renderStressLegend() {
   const set = state.st === "delta" ? DELTA_CLASSES : CLASSES;
   document.getElementById("legend-title").textContent = state.st === "delta"
     ? "Plan effect on N-1 headroom at this horizon"
-    : "N-1 headroom (GW of shaped transfer to first post-fault limit)";
+    : "N-1 headroom — GW of shaped transfer absorbed before a branch hits its MVA rating post-fault";
   for (const c of set) {
     const row = document.createElement("div");
     row.className = "row";
@@ -441,7 +485,7 @@ function refresh() {
     const gf = map.getFilter(id);
     map.setFilter(id, [gf[0], gf[1], datedFilter(kind)]);
   }
-  for (const id of ["tyndp_lines", "tyndp_points"]) {
+  for (const id of ["tyndp_lines", "tyndp_points", "tyndp_polys"]) {
     if (!map.getLayer(id)) continue;
     const gf = map.getFilter(id);
     map.setFilter(id, [gf[0], gf[1], tyndpYearFilter()]);
@@ -482,7 +526,7 @@ function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").re
 
 function wirePopups() {
   const layers = () => ["stress_existing", "stress_planned", "bridges",
-                        "tyndp_lines", "tyndp_points",
+                        "tyndp_lines", "tyndp_points", "tyndp_polys",
                         "proj_lines", "proj_points", "demand_places", "gen_plants",
                         "flex_batteries", "plant_poly_gen", "plant_poly_flex"]
                        .filter(id => map.getLayer(id));
@@ -497,7 +541,11 @@ function wirePopups() {
       title = p.name || "TYNDP project";
       rows = [["type", p.kind + (p.typeOfElement ? " · " + p.typeOfElement : "")],
               ["commissioning", p.year || p.commissioningYear || "—"],
-              ["status", p.statusName], ["TSOs", p.tsos],
+              ["status", p.statusName],
+              ["voltage", p.voltage_kv ? p.voltage_kv + " kV" : null],
+              ["technology", p.technology],
+              ["route length", p.route_km ? p.route_km + " km" : null],
+              ["TSOs", p.tsos],
               ["countries", p.countries],
               ["PCI corridor", p.pciCorridor],
               ["source", p.source]].filter(([, v]) => v);
@@ -511,8 +559,9 @@ function wirePopups() {
       const s = `${state.scen}_${h}_${st}`;
       title = p.name || p.fid;
       rows = [
-        ["headroom", p[`h_${s}`] != null ? p[`h_${s}`] + " GW of shaped transfer" : "—"],
-        ["worst N-1 loading", p[`u_${s}`] != null ? (p[`u_${s}`]*100).toFixed(1) + "% of typed rating per GW" : "—"],
+        ["rating (typed)", (p.s_nom_mva|0) + " MVA"],
+        ["headroom", p[`h_${s}`] != null ? p[`h_${s}`] + " GW of shaped transfer until the rating binds post-fault" : "—"],
+        ["worst N-1 loading", p[`u_${s}`] != null ? (p[`u_${s}`]*100).toFixed(1) + "% of rating per GW transferred" : "—"],
         ["binding contingency", p[`b_${s}`] || "—"],
         ["driving transfer", p[`d_${s}`] || "—"],
       ];
@@ -520,8 +569,7 @@ function wirePopups() {
       if (he != null && hp != null && he < 998 && hp < 998)
         rows.push(["plan effect", (hp - he >= 0 ? "+" : "") + (hp - he).toFixed(1) + " GW headroom"]);
       rows.push(["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"],
-                ["rating basis", "inferred: v23 typed s_nom " + (p.s_nom_mva|0) + " MVA"],
-                ["evidence", "inferred: typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"]);
+                ["evidence", "inferred: v23 typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"]);
     } else if (f.sourceLayer === "projects") {
       title = p.name || "Planned development";
       rows = [["promoter", p.promoter], ["window", `${p.service_year_min || "?"}–${p.service_year_max || "?"}`],
