@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>European Grid N-1 Stress Screen (v4)</title>
+<title>European Grid N-1 Stress Screen (v4.4)</title>
 <link rel="icon" href="data:,">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -19,7 +19,7 @@
            display:flex; justify-content:space-between; align-items:center; gap:18px; flex-wrap:wrap; }
   h1 { margin:0; font:600 18px/1.2 Georgia,serif; }
   .subtitle { color:var(--muted); font-size:12px; margin-top:2px; max-width:860px; }
-  .hold { background:#7c2d12; color:#fff7ed; font-size:12px; padding:6px 16px; }
+  .hold { background:#334155; color:#f1f5f9; font-size:12px; padding:6px 16px; }
   .ctl { font-size:12px; color:var(--muted); min-width:290px; }
   .ctl label { display:inline-flex; gap:4px; align-items:center; margin-right:8px; }
   .ctl input { accent-color:#b91c1c; margin:0; }
@@ -48,15 +48,16 @@
 </head>
 <body>
 <div class="hold" id="holdbar">
-  Screening-grade N-1 stress screen — HOLD: validation gates not signed off. Post-fault headroom under
-  scenario-shaped 1&nbsp;GW transfers only. No forecast loading, no energy-not-served, no
-  voltage/stability/fault-level conclusions, no reinforcement sizing, no delivery-year promises.
-  DC links carry no flow and DC-link outages are not screened — stress in GB, the island of Ireland,
-  the Nordics and Baltic import corridors is understated.
+  Screening-grade N-1 stress screen. Post-fault headroom under scenario-shaped 1&nbsp;GW transfers
+  only — no forecast loading, no energy-not-served, no voltage/stability/fault-level conclusions,
+  no reinforcement sizing, no delivery-year promises. DC links and interconnectors are screened as
+  1&nbsp;GW converter-swing patterns (schedule swing and full outage, per GW); they carry no
+  scheduled flow and provide no relief. Planned-line endpoints are probabilistic where the source
+  plan names a place rather than a station. <b>Read Method &amp; limits before quoting any figure.</b>
 </div>
 <header>
   <div>
-    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4</span></h1>
+    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4.4</span></h1>
     <div class="subtitle">
       Worst single-contingency post-fault loading per GW of TYNDP-2026-shaped transfer, on the open
       v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Screen scope:
@@ -80,6 +81,12 @@
       <label><input type="radio" name="st" value="p"> with plans</label>
       <label title="Colors the change in N-1 headroom that the published plans make at this horizon"><input type="radio" name="st" value="delta" checked> plan effect</label>
     </div>
+    <div style="margin-top:2px">
+      <span title="Which stress mechanism the colours show. Bulk transfer is what boundary reinforcement addresses; DC swing is the local loss/swing of a converter infeed. Worst of both is the conservative envelope.">stress:</span>
+      <label><input type="radio" name="mech" value="env" checked> worst of both</label>
+      <label><input type="radio" name="mech" value="t"> bulk transfer</label>
+      <label><input type="radio" name="mech" value="c"> DC swing</label>
+    </div>
     <div id="readout" style="font-size:11px; color:var(--muted); margin-top:1px;"></div>
   </div>
 </header>
@@ -91,9 +98,11 @@
     <h2 style="margin-top:10px">Development &amp; scenarios</h2>
     <div id="legend-dev"></div>
     <div class="note">Dashed violet = planned line from a public development plan (schematic —
-      not a route alignment; promoter-stated years); teal dash = DC / interconnector project,
-      shown for context, never flow-modelled. Dotted grey = connection radials (bridges),
-      flagged not scored. Click any branch for its binding contingency and driving transfer.</div>
+      not a route alignment; promoter-stated years); teal dash = planned DC / interconnector
+      project, context only. Solid teal = existing v23 DC links — screened as 1&nbsp;GW
+      converter-swing patterns, not flow-carrying branches. Dotted grey = connection radials
+      (bridges), flagged not scored. Click any branch for its binding contingency and driving
+      transfer.</div>
     <details style="margin-top:8px; border-top:1px solid var(--rule); padding-top:8px;">
       <summary style="cursor:pointer; font-weight:600; font-size:12px;">Method &amp; limits (read before quoting)</summary>
       <div class="note">
@@ -102,26 +111,76 @@
         loaded in every credible market hour shows the same headroom as an idle one. Not NTC, TTC or
         boundary capability.</p>
         <p><b>N-1 of what.</b> Single outage of each modelled AC branch (line record or ≥220 kV
-        transformer) within its synchronous area. No generator, busbar, DC-link or common-tower
+        transformer) within its synchronous area. No generator, busbar or common-tower
         double-circuit contingencies. Collapsed double circuits are modelled as one representative
         circuit (conservative on those corridors).</p>
+        <p><b>Two stress mechanisms, reported separately.</b> Bulk transfer stress (cross-border,
+        internal and offshore-landing shapes) is what boundary reinforcement addresses. DC converter
+        swing is a local phenomenon, and per GW an injection at one converter bus in a weak network
+        always out-stresses a spatially distributed 1 GW transfer — so a single combined ranking is
+        dominated by DC (in GB, 49 of the top 50 branches, 27 of them from one link). The selector
+        above switches between them; "worst of both" is the conservative envelope. The GB validation
+        gate is run against the <i>bulk transfer</i> figures, because that is the like-for-like
+        comparison with a published boundary map — the DC mechanism is screened and reported, not
+        ranked against something it does not describe. For a DC-swing figure, compare it against
+        the link's own rating: a branch that binds at 0.55&nbsp;GW of swing on a 1.2&nbsp;GW link
+        is exposed to a credible single event.</p>
+        <p><b>DC links &amp; interconnectors.</b> Each v23 DC link ≥500 MW enters as a 1 GW
+        converter-injection transfer pattern: embedded links as end-to-end swings, interconnector
+        and offshore landings as infeed against the national demand shape (collinear links landing
+        at the same converter bus — bipole halves, converter clusters — share one pattern). Per GW, the AC-flow
+        consequence of a schedule swing and of a full-import outage is the same linear pattern, so
+        one pattern measures both — with the counterbalance proxied by the same national shape
+        (real post-fault balancing is reserve-distributed across the synchronous area; screening
+        proxy). Combined cases are screened: every AC branch outage is evaluated
+        under every DC pattern. DC links carry no scheduled flow and provide no relief — corridors
+        paralleled by embedded HVDC are shown conservatively (worse than operational reality).</p>
         <p><b>Envelope colors.</b> Each branch shows its own worst case over all shaped transfer
         directions and all outages — neighbouring reds need not bind together. Click for the binding
         pair.</p>
         <p><b>Scope.</b> ≥220 kV, 50 Hz AC per synchronous area. The grey linework beneath is the full
-        50–750 kV dataset, context only — unscreened.</p>
+        50–750 kV dataset, context only — unscreened. The "with plans" network contains national and
+        TSO development-plan circuits <i>and</i> ENTSO-E TYNDP&nbsp;2026 AC transmission projects at
+        their published commissioning years, so the plan case reflects both national and
+        pan-European build. TYNDP DC projects are not branches — DC enters as converter-swing
+        patterns.</p>
+        <p><b>Where planned lines land.</b> A development plan names a place, not a busbar. Where
+        the endpoint is certain (the plan names a station we hold) the circuit connects there. Where
+        it is not, the endpoint is treated as <b>probabilistic</b>: the circuit is split across the
+        two or three major terminals that plausibly host it — scored by distance, whether the node
+        is a real substation rather than a tee-point, voltage match and connectivity — with
+        admittance and rating divided by weight, so each plausible terminal gets partial relief
+        instead of one arbitrary terminal getting all of it. This is an <b>expected network, not a
+        scenario ensemble</b>: a real build lands the whole circuit on one terminal, and a fan
+        creates a path between its own candidate terminals that no single realisation has
+        (candidates are held within 30&nbsp;km of each other to bound it). Every branch popup
+        carries the resolution it used. The previous release required an exact station match at
+        both ends and silently dropped 29% of line-like schemes — which understated the relief the
+        plans bring.</p>
         <p><b>Shaping.</b> Transfers are shaped by TYNDP national totals mapped to today's OSM plant
-        sites and population-weighted demand; future new-build sites and large point loads are not
+        sites and population-weighted demand, plus per-country offshore-wind landing patterns and
+        per-converter DC swing patterns; future new-build sites and large point loads are not
         represented.</p>
         <p><b>Ratings.</b> DC MW flow vs static typed continuous MVA rating (pf ≈ 1); no seasonal or
         short-term post-fault emergency ratings — conservative vs operational practice.</p>
+        <p><b>What has been validated, and what has not.</b> Great Britain only, against NESO's
+        published material. <i>Direction</i>: of our 50 most transfer-stressed meshed corridors,
+        92% fall within 10&nbsp;km of a NESO "Beyond 2030" reinforcement corridor, against a 72.7%
+        random baseline (permutation p&nbsp;=&nbsp;0.0005). <i>Magnitude</i>: across 138 routes
+        matched to ETYS&nbsp;2025 Appendix&nbsp;B, per-circuit reactance tracks the published values
+        (Spearman 0.754, median ratio 0.895), and our three most-stressed boundaries — B6, B7a, B8 —
+        are exactly NESO's three largest published 2030 capability shortfalls. Boundary <i>ranking</i>
+        correlation is weaker (Spearman 0.419 over 17 boundaries, p&nbsp;=&nbsp;0.09) — treat the
+        boundary order as indicative, not as a ranking to quote. <b>No continental cross-check has
+        been done</b>: outside GB, direction and magnitude are unvalidated, and the further from a
+        meshed 400&nbsp;kV core you go the less the screening assumptions hold.</p>
       </div>
     </details>
   </div>
 </div>
 <script>
 const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
-const state = { year: 2030, scen: "ntp", st: "delta", ddelta: false };
+const state = { year: 2030, scen: "ntp", st: "delta", mech: "env", ddelta: false };
 const HORIZONS = { ntp: [2030, 2035, 2040], lev: [2035, 2040], hev: [2035, 2040] };
 const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
 let TOTALS = null;
@@ -168,7 +227,8 @@ function horizonFor(year, scen) {
   return best;
 }
 const sfx = (st) => `${state.scen}_${horizonFor(state.year, state.scen)}_${st}`;
-const hField = (st) => `h_${sfx(st)}`;
+const MECH_PREFIX = { env: "h", t: "ht", c: "hc" };
+const hField = (st) => `${MECH_PREFIX[state.mech]}_${sfx(st)}`;
 const uField = (st) => `u_${sfx(st)}`;
 
 function absColorExpr(st) {
@@ -301,10 +361,17 @@ async function setup() {
     url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_context.pmtiles" });
   // bump ?v= on every tile rebuild: busts stale HTTP range caches
   map.addSource("stress", { type: "vector",
-    url: "pmtiles://stress_v4.pmtiles?v=20260821-3" });
+    url: "pmtiles://stress_v4.pmtiles?v=20260822-1" });
 
   map.addLayer({ id: "base_grid", type: "line", source: "base", "source-layer": "ac_lines",
     paint: { "line-color": "#c3cbd1", "line-width": 0.7 } });
+  // v23 DC links: since v4.3 these are IN the calcs - each >=500 MW link is a
+  // 1 GW converter-swing transfer pattern (schedule swing / outage per GW).
+  // Drawn solid dark teal; they are not flow-carrying branches and get no
+  // headroom color of their own.
+  map.addLayer({ id: "dc_links", type: "line", source: "base", "source-layer": "dc_links",
+    paint: { "line-color": "#0e7490", "line-opacity": 0.85,
+             "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.3, 8, 2.2, 12, 3.6] } });
 
   if (TOTALS) {
     const groupColor = ["match", ["get", "group"],
@@ -356,11 +423,17 @@ async function setup() {
              "line-width": widthExpr("planned") } });
 
   map.addSource("tyndp", { type: "geojson", data: "tyndp_projects_2026.geojson" });
+  // Corridor POLYGONS are study areas, not routes: filled violet-blue with a
+  // solid outline so they can never be misread as the dashed cyan project
+  // LINES (they used to share one cyan and looked identical).
   map.addLayer({ id: "tyndp_polys", type: "fill", source: "tyndp",
     filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
     layout: { visibility: "none" },
-    paint: { "fill-color": "#06b6d4", "fill-opacity": 0.12,
-             "fill-outline-color": "#06b6d4" } });
+    paint: { "fill-color": "#6366f1", "fill-opacity": 0.14 } });
+  map.addLayer({ id: "tyndp_poly_outline", type: "line", source: "tyndp",
+    filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
+    layout: { visibility: "none" },
+    paint: { "line-color": "#6366f1", "line-width": 1.4, "line-opacity": 0.85 } });
   map.addLayer({ id: "tyndp_lines", type: "line", source: "tyndp",
     filter: ["all", ["==", ["geometry-type"], "LineString"], tyndpYearFilter()],
     layout: { visibility: "none" },
@@ -409,13 +482,20 @@ function legendRow(parent, swatchHtml, label, ids, startOn, title) {
 }
 function buildLegends() {
   const dev = document.getElementById("legend-dev");
+  legendRow(dev, `<span class="swatch" style="border-color:#0e7490"></span>`,
+            "DC links (v23 dataset)", ["dc_links"], true,
+            "HVDC links and interconnectors from the open v23 dataset. In the screen each >=500 MW link is a 1 GW converter-swing transfer pattern - covering schedule-swing and full-outage stress per GW - not a flow-carrying branch; no relief is modelled");
   legendRow(dev, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
             "Planned projects by year", ["proj_lines", "proj_points"], false,
             "Public development plans; violet = shown by selected year");
   legendRow(dev, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
-            "TYNDP 2026 projects (ENTSO-E)",
-            ["tyndp_lines", "tyndp_points", "tyndp_polys"], false,
-            "ENTSO-E TYNDP 2026 draft portfolio (preliminary) - source acknowledged; year-gated by the slider; storage as dots; translucent fills are STUDY CORRIDORS, not routes; not represented in the flow model");
+            "TYNDP 2026 lines &amp; storage (ENTSO-E)",
+            ["tyndp_lines", "tyndp_points"], false,
+            "ENTSO-E TYNDP 2026 draft portfolio (preliminary) - source acknowledged; year-gated by the slider; transmission projects as dashed cyan lines, storage as dots; not represented in the flow model");
+  legendRow(dev, `<span class="swatch dot" style="background:#6366f1;opacity:.35;border-radius:2px;width:22px;height:10px"></span>`,
+            "TYNDP 2026 study corridors (areas)",
+            ["tyndp_polys", "tyndp_poly_outline"], false,
+            "Translucent violet-blue FILLS are study corridors/areas from the TYNDP 2026 draft portfolio - broad zones under study, NOT routes and NOT lines; year-gated by the slider; not represented in the flow model");
   if (TOTALS) {
     legendRow(dev, `<span class="swatch dot" style="background:#0284c7;opacity:.6"></span>`,
               "TYNDP demand at OSM places", ["demand_places"], false);
@@ -446,9 +526,12 @@ function renderStressLegend() {
   const legend = document.getElementById("legend");
   legend.innerHTML = "";
   const set = state.st === "delta" ? DELTA_CLASSES : CLASSES;
+  const mechLabel = { env: "worst of bulk transfer and DC swing",
+                      t: "bulk transfer only",
+                      c: "DC converter swing only" }[state.mech];
   document.getElementById("legend-title").textContent = state.st === "delta"
-    ? "Plan effect on N-1 headroom at this horizon"
-    : "N-1 headroom — GW of shaped transfer absorbed before a branch hits its MVA rating post-fault";
+    ? `Plan effect on N-1 headroom at this horizon (${mechLabel})`
+    : `N-1 headroom — GW absorbed before a branch hits its MVA rating post-fault (${mechLabel})`;
   for (const c of set) {
     const row = document.createElement("div");
     row.className = "row";
@@ -485,7 +568,7 @@ function refresh() {
     const gf = map.getFilter(id);
     map.setFilter(id, [gf[0], gf[1], datedFilter(kind)]);
   }
-  for (const id of ["tyndp_lines", "tyndp_points", "tyndp_polys"]) {
+  for (const id of ["tyndp_lines", "tyndp_points", "tyndp_polys", "tyndp_poly_outline"]) {
     if (!map.getLayer(id)) continue;
     const gf = map.getFilter(id);
     map.setFilter(id, [gf[0], gf[1], tyndpYearFilter()]);
@@ -520,12 +603,15 @@ function wireControls() {
     r.addEventListener("change", () => { state.scen = r.value; refresh(); }));
   document.querySelectorAll("input[name=st]").forEach(r =>
     r.addEventListener("change", () => { state.st = r.value; refresh(); }));
+  document.querySelectorAll("input[name=mech]").forEach(r =>
+    r.addEventListener("change", () => { state.mech = r.value; refresh(); }));
 }
 
 function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
 
 function wirePopups() {
   const layers = () => ["stress_existing", "stress_planned", "bridges",
+                        "dc_links",
                         "tyndp_lines", "tyndp_points", "tyndp_polys",
                         "proj_lines", "proj_points", "demand_places", "gen_plants",
                         "flex_batteries", "plant_poly_gen", "plant_poly_flex"]
@@ -549,6 +635,16 @@ function wirePopups() {
               ["countries", p.countries],
               ["PCI corridor", p.pciCorridor],
               ["source", p.source]].filter(([, v]) => v);
+    } else if (f.layer && f.layer.id === "dc_links") {
+      title = p.name || "DC link";
+      rows = [["type", "HVDC link / interconnector (v23 dataset)"],
+              ["voltage", p.voltage_kv ? p.voltage_kv + " kV DC" : "—"],
+              ["capacity", p.p_nom_mw ? (p.p_nom_mw|0) + " MW" : "unknown"],
+              ["status", p.status || "unknown"],
+              ["in this screen", p.p_nom_mw >= 500
+                ? "1 GW converter-swing transfer pattern (schedule swing / outage per GW); not a flow-carrying branch, no relief modelled"
+                : "shown for context only (< 500 MW or unrated - no swing pattern)"],
+              ["capacity provenance", p.p_nom_source || "unknown"]];
     } else if (f.layer && f.layer.id === "bridges") {
       title = p.name || p.fid;
       rows = [["type", "connection radial (bridge)"],
@@ -562,14 +658,23 @@ function wirePopups() {
         ["rating (typed)", (p.s_nom_mva|0) + " MVA"],
         ["headroom", p[`h_${s}`] != null ? p[`h_${s}`] + " GW of shaped transfer until the rating binds post-fault" : "—"],
         ["worst N-1 loading", p[`u_${s}`] != null ? (p[`u_${s}`]*100).toFixed(1) + "% of rating per GW transferred" : "—"],
-        ["binding contingency", p[`b_${s}`] || "—"],
-        ["driving transfer", p[`d_${s}`] || "—"],
+        // low-zoom tiles are slim (numeric fields only); the binding strings
+        // arrive from z6 up
+        ["binding contingency", p[`b_${s}`] || (map.getZoom() < 6 ? "zoom in for detail" : "—")],
+        ["driving transfer", p[`d_${s}`] || (map.getZoom() < 6 ? "zoom in for detail" : "—")],
       ];
+      const ht = p[`ht_${s}`], hc = p[`hc_${s}`];
+      if (ht != null) rows.push(["— bulk transfer", ht + " GW until this branch binds (the mechanism boundary reinforcement addresses)"]);
+      if (hc != null) rows.push(["— DC swing", hc + " GW of converter swing until this branch binds" +
+        (p[`dc_${s}`] ? " · worst: " + p[`dc_${s}`] : "") +
+        " — compare against the link's own rating"]);
       const he = p[`h_${state.scen}_${h}_e`], hp = p[`h_${state.scen}_${h}_p`];
       if (he != null && hp != null && he < 998 && hp < 998)
         rows.push(["plan effect", (hp - he >= 0 ? "+" : "") + (hp - he).toFixed(1) + " GW headroom"]);
-      rows.push(["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"],
-                ["evidence", "inferred: v23 typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"]);
+      rows.push(["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"]);
+      if (p.origin) rows.push(["origin", p.origin]);
+      if (p.endpoint) rows.push(["endpoint", p.endpoint]);
+      rows.push(["evidence", "inferred: v23 typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"]);
     } else if (f.sourceLayer === "projects") {
       title = p.name || "Planned development";
       rows = [["promoter", p.promoter], ["window", `${p.service_year_min || "?"}–${p.service_year_max || "?"}`],
