@@ -55,6 +55,11 @@
   .maplibregl-popup-content td { padding:1.5px 6px 1.5px 0; vertical-align:top; }
   .maplibregl-popup-content td:first-child { color:var(--muted); white-space:nowrap; }
   .ptitle { font-weight:700; margin-bottom:4px; }
+  #whybar { position:absolute; left:50%; transform:translateX(-50%); bottom:14px; z-index:5;
+            background:var(--panel); border:1px solid var(--rule); border-radius:8px;
+            padding:7px 12px; font-size:12.5px; max-width:min(760px, 92%);
+            box-shadow:0 1px 6px rgba(0,0,0,.18); }
+  #whybar button { margin-left:10px; font-size:11px; cursor:pointer; }
 </style>
 </head>
 <body>
@@ -103,6 +108,7 @@
 </header>
 <div style="position:relative; min-height:0;">
   <div id="map"></div>
+  <div id="whybar" hidden></div>
   <div class="panel">
     <h2 id="legend-title">N-1 headroom (GW of shaped transfer to first post-fault limit)</h2>
     <div id="legend"></div>
@@ -214,15 +220,18 @@ const CLASSES = [
   { max: 25,       color: "#16a34a", label: "12–25 GW" },
   { max: Infinity, color: "#9ca3af", label: "≥ 25 GW" },
 ];
+// below this post-plan headroom, losing headroom is worth flagging red
+const WORSE_MATTERS_GW = 12;
 const DELTA_CLASSES = [
   { min: 5,         color: "#15803d", label: "headroom +5 GW or more" },
   { min: 1,         color: "#86efac", label: "+1 to +5 GW" },
   { min: -1,        color: "#d1d5db", label: "≈ unchanged" },
-  { min: -Infinity, color: "#b91c1c", label: "worse (−1 GW or more)" },
+  { min: -Infinity, color: "#b91c1c",
+    label: "worse by ≥1 GW <i>and</i> lands under 12 GW" },
 ];
 const GROUP_COLORS = {
   wind_onshore: "#0d9488", wind_offshore: "#155e75", solar: "#f59e0b",
-  hydro: "#2563eb", nuclear: "#7c3aed", gas: "#6b7280", coal: "#374151",
+  hydro: "#2563eb", nuclear: "#7c3aed", gas: "#6b7280", hydrogen: "#0ea5e9", coal: "#374151",
   oil: "#78350f", bioenergy: "#65a30d", other_res: "#84cc16", battery: "#db2777",
 };
 
@@ -273,11 +282,18 @@ function absWidthExpr(st) {
 function colorExpr(layerKind) {
   if (state.st === "delta") {
     if (layerKind === "planned") return absColorExpr("p");
-    const d = ["-", ["coalesce", ["get", hField("p")], 999],
-                    ["coalesce", ["get", hField("e")], 999]];
+    const hp = ["coalesce", ["get", hField("p")], 999];
+    const d = ["-", hp, ["coalesce", ["get", hField("e")], 999]];
     const expr = ["case"];
+    // A branch can lose a lot of headroom and still be nowhere near its
+    // limit: adding a circuit pulls flow onto parallel paths, so something
+    // that carried almost nothing starts doing work. Painting that red says
+    // "the plans broke this" when it means the opposite. Red is therefore
+    // reserved for branches that also LAND somewhere that matters.
+    expr.push(["all", ["<", d, -1], ["<", hp, WORSE_MATTERS_GW]],
+              DELTA_CLASSES[DELTA_CLASSES.length - 1].color);
     for (const c of DELTA_CLASSES.slice(0, -1)) expr.push([">=", d, c.min], c.color);
-    expr.push(DELTA_CLASSES[DELTA_CLASSES.length - 1].color);
+    expr.push(DELTA_CLASSES[2].color);   // worse, but lands unconstrained
     return expr;
   }
   return absColorExpr(state.st);
@@ -377,7 +393,9 @@ function demandDeltaExprs() {
            color: ["match", ["get", "country"], ...color, "#9ca3af"] };
 }
 
-const TILE_VERSION = "20260822-2";
+// Set from stress_manifest.json at startup: the export derives it from the
+// archives it just wrote, so the stamp cannot drift from the tiles.
+let TILE_VERSION = "unset";
 // base zoom stops for the line layers whose width is a plain expression; the
 // stress layers rebuild theirs through absWidthExpr()/widthExpr() on refresh
 const STATIC_LINE_WIDTHS = {
@@ -437,12 +455,70 @@ function buildStressLayers() {
     filter: stressFilter("planned_line"),
     paint: { "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
              "line-width": widthExpr("planned") } }, below);
+  // "why is this branch stressed": the selected branch and the outage that
+  // drives its worst case, drawn on top of everything so the pair is legible
+  // wherever they are. NONE filter until something is clicked.
+  map.addLayer({ id: "hl_binding", type: "line", source: src, "source-layer": "branches",
+    filter: ["==", ["get", "fid"], "\u0000"],
+    paint: { "line-color": "#f59e0b", "line-width": 7, "line-opacity": 0.55,
+             "line-blur": 1.5 } });
+  map.addLayer({ id: "hl_selected", type: "line", source: src, "source-layer": "branches",
+    filter: ["==", ["get", "fid"], "\u0000"],
+    paint: { "line-color": "#111827", "line-width": 3.2, "line-opacity": 0.9,
+             "line-dasharray": [1.4, 1.0] } });
+}
+
+const HL_LAYERS = ["hl_binding", "hl_selected"];
+function clearHighlight() {
+  for (const id of HL_LAYERS)
+    if (map.getLayer(id)) map.setFilter(id, ["==", ["get", "fid"], "\u0000"]);
+  const c = document.getElementById("whybar");
+  if (c) c.hidden = true;
+}
+
+// Show what drives a branch's worst case: itself, plus the branch whose
+// outage binds it. The driving transfer is a pattern, not a feature, so it is
+// named rather than drawn.
+function highlightDrivers(props, suffix) {
+  if (!map.getLayer("hl_selected")) return;
+  const binding = props[`b_${suffix}`];
+  const driver = props[`d_${suffix}`];
+  map.setFilter("hl_selected", ["==", ["get", "fid"], String(props.fid)]);
+  const isBranch = binding && !/^none/.test(binding);
+  map.setFilter("hl_binding",
+    isBranch ? ["==", ["get", "fid"], String(binding)]
+             : ["==", ["get", "fid"], "\u0000"]);
+
+  const bar = document.getElementById("whybar");
+  if (!bar) return;
+  bar.hidden = false;
+  if (binding == null && map.getZoom() < 6) {
+    bar.innerHTML = `<b>${esc(props.name || props.fid)}</b> — zoom past z6 to load the ` +
+      `binding contingency for this branch. <button id="whyclose">clear</button>`;
+  } else {
+    bar.innerHTML =
+      `<span style="border-top:3px dashed #111827;width:20px;display:inline-block;` +
+      `vertical-align:middle"></span> <b>${esc(props.name || props.fid)}</b>` +
+      (isBranch
+        ? ` &nbsp;·&nbsp; <span style="border-top:5px solid #f59e0b;width:20px;` +
+          `display:inline-block;vertical-align:middle"></span> worst case is driven by the ` +
+          `outage of <b>${esc(binding)}</b>`
+        : ` &nbsp;·&nbsp; worst case occurs with no outage (N-0 governs)`) +
+      (driver ? ` &nbsp;·&nbsp; under the <b>${esc(driver)}</b> transfer` : "") +
+      ` <button id="whyclose">clear</button>`;
+  }
+  const btn = document.getElementById("whyclose");
+  if (btn) btn.onclick = clearHighlight;
 }
 
 let setupDone = false;
 async function setup() {
   if (setupDone) return; setupDone = true;
   wireControls();   // controls live from the start; refresh() guards on layers
+  try {
+    const mf = await fetch("stress_manifest.json", { cache: "no-store" });
+    if (mf.ok) TILE_VERSION = (await mf.json()).build || TILE_VERSION;
+  } catch (e) { /* fall back to the unset stamp rather than blocking setup */ }
   try {
     const tj = await fetch(PUBLIC_BASE + "scenario_totals.json");
     if (tj.ok) TOTALS = await tj.json();
@@ -633,7 +709,11 @@ function renderStressLegend() {
   if (state.st === "delta") {
     const note = document.createElement("div");
     note.style.cssText = "color:var(--muted); margin-top:4px;";
-    note.textContent = "Dashed planned lines: colored by the headroom they arrive with (absolute scale).";
+    note.innerHTML = "Dashed planned lines: colored by the headroom they arrive with " +
+      "(absolute scale).<br>A branch that loses headroom but still lands above " +
+      "12&nbsp;GW shows as unchanged: new circuits redistribute flow onto parallel " +
+      "paths, so a lightly-used circuit taking up work is not a problem. In GB at 2035, " +
+      "189 branches lose headroom and none of them land under 3&nbsp;GW.";
     legend.appendChild(note);
   }
 }
@@ -694,6 +774,7 @@ function wireControls() {
   document.querySelectorAll("input[name=scen]").forEach(r =>
     r.addEventListener("change", () => {
       state.scen = r.value;
+      clearHighlight();
       if (map.getLayer("stress_existing")) buildStressLayers();
       refresh();
     }));
@@ -736,7 +817,7 @@ function wirePopups() {
   };
   map.on("click", e => {
     const feats = pick(e.point);
-    if (!feats.length) return;
+    if (!feats.length) { clearHighlight(); return; }
     const f = feats[0];
     const p = f.properties;
     const h = horizonFor(state.year, state.scen);
@@ -822,6 +903,13 @@ function wirePopups() {
               [`capacity, ${SCEN_LABEL[state.scen]} ${h}`, mw],
               ["provenance", "inferred: TYNDP 2026 x OSM plant weights"]];
     } else { return; }
+    // clicking a screened branch also shows WHAT drives its worst case
+    if (f.sourceLayer === "branches" && !(f.layer && f.layer.id === "bridges")) {
+      highlightDrivers(p, `${state.scen}_${horizonFor(state.year, state.scen)}_` +
+                          `${state.st === "delta" ? "p" : state.st}`);
+    } else {
+      clearHighlight();
+    }
     new maplibregl.Popup({ maxWidth: "330px" }).setLngLat(e.lngLat)
       .setHTML(`<div class="ptitle">${esc(title)}</div><table>` +
         rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") + "</table>")
