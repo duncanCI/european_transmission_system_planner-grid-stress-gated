@@ -39,6 +39,17 @@
   .swatch.dot { width:9px; height:9px; border-radius:50%; border:none; }
   .note { color:var(--muted); margin-top:6px; line-height:1.45; }
   .off { opacity:.4; }
+  .displayctl { margin-top:9px; border-top:1px solid var(--rule); padding-top:8px;
+                color:var(--muted); font-size:12px; }
+  .displayctl label { display:block; }
+  .displayctl output { color:#b91c1c; font-weight:700; font-variant-numeric:tabular-nums; }
+  .displayctl input[type=range] { width:100%; accent-color:#b91c1c; }
+  .stylekey { margin-top:8px; color:var(--muted); line-height:1.5;
+              border-top:1px solid var(--rule); padding-top:7px; }
+  .stylekey > summary { cursor:pointer; font-weight:600; font-size:12px; color:var(--ink); }
+  .stylekey .k { display:flex; align-items:center; gap:7px; padding:2px 0; }
+  .stylekey .k > span:first-child { width:26px; flex:none; }
+  .stylekey .k > span:last-child { flex:1; }
   .maplibregl-popup-content { font:12px/1.4 -apple-system,"Segoe UI",Roboto,Arial,sans-serif;
                               max-height:280px; overflow:auto; min-width:230px; }
   .maplibregl-popup-content td { padding:1.5px 6px 1.5px 0; vertical-align:top; }
@@ -97,12 +108,21 @@
     <div id="legend"></div>
     <h2 style="margin-top:10px">Development &amp; scenarios</h2>
     <div id="legend-dev"></div>
-    <div class="note">Dashed violet = planned line from a public development plan (schematic —
-      not a route alignment; promoter-stated years); teal dash = planned DC / interconnector
-      project, context only. Solid teal = existing v23 DC links — screened as 1&nbsp;GW
-      converter-swing patterns, not flow-carrying branches. Dotted grey = connection radials
-      (bridges), flagged not scored. Click any branch for its binding contingency and driving
-      transfer.</div>
+    <div class="displayctl">
+      <label for="linescale">Line thickness <output id="scaleout">1.0&times;</output></label>
+      <input id="linescale" type="range" min="0.5" max="3" step="0.1" value="1">
+    </div>
+    <details class="stylekey">
+      <summary>Line styles: solid vs dashed</summary>
+      <div class="k"><span style="border-top:4px solid #b91c1c"></span><span><b>Solid</b>, headroom colour — an existing screened circuit. <b>Thicker = more heavily loaded</b> per GW.</span></div>
+      <div class="k"><span style="border-top:4px dashed #b91c1c"></span><span><b>Dashed</b>, headroom colour — a <b>planned</b> circuit, coloured by the headroom it arrives with</span></div>
+      <div class="k"><span style="border-top:3px solid #0e7490"></span><span><b>Solid teal</b> — existing DC link, screened as a converter-swing pattern, not a flow-carrying branch</span></div>
+      <div class="k"><span style="border-top:3px dashed #0e7490"></span><span><b>Dashed teal</b> — planned DC / interconnector project, context only</span></div>
+      <div class="k"><span style="border-top:3px dashed #7c3aed"></span><span><b>Dashed violet</b> — planned scheme from a public development plan, schematic — <b>not a route</b></span></div>
+      <div class="k"><span style="border-top:3px dashed #06b6d4"></span><span><b>Dashed cyan</b> — ENTSO-E TYNDP 2026 project</span></div>
+      <div class="k"><span style="border-top:2px dotted #9ca3af"></span><span><b>Dotted grey</b> — connection radial (bridge): its outage islands the network, so it is flagged, not scored</span></div>
+      <div style="margin-top:5px">Click any branch for its binding contingency and driving transfer.</div>
+    </details>
     <details style="margin-top:8px; border-top:1px solid var(--rule); padding-top:8px;">
       <summary style="cursor:pointer; font-weight:600; font-size:12px;">Method &amp; limits (read before quoting)</summary>
       <div class="note">
@@ -180,7 +200,8 @@
 </div>
 <script>
 const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
-const state = { year: 2030, scen: "ntp", st: "delta", mech: "env", ddelta: false };
+const state = { year: 2030, scen: "ntp", st: "delta", mech: "env",
+                ddelta: false, lineScale: 1 };
 const HORIZONS = { ntp: [2030, 2035, 2040], lev: [2035, 2040], hev: [2035, 2040] };
 const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
 let TOTALS = null;
@@ -240,9 +261,12 @@ function absColorExpr(st) {
   return expr;
 }
 function absWidthExpr(st) {
+  const k = state.lineScale;
   const u = ["min", 0.4, ["coalesce", ["get", uField(st)], 0]];
   return ["interpolate", ["linear"], ["zoom"],
-          4, ["+", 0.8, ["*", 9, u]], 8, ["+", 1.4, ["*", 16, u]], 11, ["+", 2.2, ["*", 24, u]]];
+          4, ["*", k, ["+", 0.8, ["*", 9, u]]],
+          8, ["*", k, ["+", 1.4, ["*", 16, u]]],
+          11, ["*", k, ["+", 2.2, ["*", 24, u]]]];
 }
 // In "plan effect" mode, existing lines color by the CHANGE plans make, while
 // planned lines color by the headroom they ARRIVE with (they have no baseline).
@@ -264,8 +288,11 @@ function widthExpr(layerKind) {
     const d = ["abs", ["-", ["coalesce", ["get", hField("p")], 0],
                             ["coalesce", ["get", hField("e")], 0]]];
     const u = ["min", 0.5, ["*", 0.06, d]];
+    const k = state.lineScale;
     return ["interpolate", ["linear"], ["zoom"],
-            4, ["+", 0.8, ["*", 7, u]], 8, ["+", 1.4, ["*", 13, u]], 11, ["+", 2.2, ["*", 20, u]]];
+            4, ["*", k, ["+", 0.8, ["*", 7, u]]],
+            8, ["*", k, ["+", 1.4, ["*", 13, u]]],
+            11, ["*", k, ["+", 2.2, ["*", 20, u]]]];
   }
   return absWidthExpr(state.st);
 }
@@ -347,6 +374,14 @@ function demandDeltaExprs() {
 }
 
 const TILE_VERSION = "20260822-2";
+// base zoom stops for the line layers whose width is a plain expression; the
+// stress layers rebuild theirs through absWidthExpr()/widthExpr() on refresh
+const STATIC_LINE_WIDTHS = {
+  dc_links:    [[4, 1.3], [8, 2.2], [12, 3.6]],
+  tyndp_lines: [[4, 1.6], [8, 2.6], [12, 4.0]],
+  proj_lines:  [[4, 1.2], [8, 2.0], [12, 3.4]],
+  bridges:     [[4, 1.0], [8, 1.0], [12, 1.0]],
+};
 const STRESS_LAYERS = ["bridges", "stress_existing", "stress_planned"];
 
 function stressSourceId(scen) { return "stress_" + scen; }
@@ -643,6 +678,17 @@ function wireControls() {
     r.addEventListener("change", () => { state.st = r.value; refresh(); }));
   document.querySelectorAll("input[name=mech]").forEach(r =>
     r.addEventListener("change", () => { state.mech = r.value; refresh(); }));
+  const sl = document.getElementById("linescale");
+  if (sl) sl.addEventListener("input", () => {
+    state.lineScale = +sl.value;
+    document.getElementById("scaleout").textContent = state.lineScale.toFixed(1) + "\u00d7";
+    for (const [id, stops] of Object.entries(STATIC_LINE_WIDTHS)) {
+      if (map.getLayer(id)) map.setPaintProperty(id, "line-width",
+        ["interpolate", ["linear"], ["zoom"],
+         ...stops.flatMap(([z, w]) => [z, w * state.lineScale])]);
+    }
+    refresh();   // rebuilds the stress-layer widths from absWidthExpr/widthExpr
+  });
 }
 
 function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
@@ -654,8 +700,19 @@ function wirePopups() {
                         "proj_lines", "proj_points", "demand_places", "gen_plants",
                         "flex_batteries", "plant_poly_gen", "plant_poly_flex"]
                        .filter(id => map.getLayer(id));
+  // A 1-2 px line is hard to hit: exact point first so a deliberate click
+  // still wins, then a small box around the cursor.
+  const HIT_PX = 7;
+  const pick = (pt) => {
+    const ls = layers();
+    const exact = map.queryRenderedFeatures(pt, { layers: ls });
+    if (exact.length) return exact;
+    return map.queryRenderedFeatures(
+      [[pt.x - HIT_PX, pt.y - HIT_PX], [pt.x + HIT_PX, pt.y + HIT_PX]],
+      { layers: ls });
+  };
   map.on("click", e => {
-    const feats = map.queryRenderedFeatures(e.point, { layers: layers() });
+    const feats = pick(e.point);
     if (!feats.length) return;
     const f = feats[0];
     const p = f.properties;
@@ -746,8 +803,7 @@ function wirePopups() {
       .addTo(map);
   });
   map.on("mousemove", e => {
-    const feats = map.queryRenderedFeatures(e.point, { layers: layers() });
-    map.getCanvas().style.cursor = feats.length ? "pointer" : "";
+    map.getCanvas().style.cursor = pick(e.point).length ? "pointer" : "";
   });
 }
 </script>
