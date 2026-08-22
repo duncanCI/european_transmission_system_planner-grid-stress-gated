@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="robots" content="noindex,nofollow">
-<title>European Grid N-1 Stress Screen (v4.4)</title>
+<title>European Grid N-1 Stress Screen (v4.5)</title>
 <link rel="icon" href="data:,">
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
@@ -57,7 +57,7 @@
 </div>
 <header>
   <div>
-    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4.4</span></h1>
+    <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4.5</span></h1>
     <div class="subtitle">
       Worst single-contingency post-fault loading per GW of TYNDP-2026-shaped transfer, on the open
       v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Screen scope:
@@ -346,6 +346,41 @@ function demandDeltaExprs() {
            color: ["match", ["get", "country"], ...color, "#9ca3af"] };
 }
 
+const TILE_VERSION = "20260822-2";
+const STRESS_LAYERS = ["bridges", "stress_existing", "stress_planned"];
+
+function stressSourceId(scen) { return "stress_" + scen; }
+
+function ensureScenarioSource(scen) {
+  const id = stressSourceId(scen);
+  if (!map.getSource(id)) {
+    map.addSource(id, { type: "vector",
+      url: `pmtiles://stress_v4_${scen}.pmtiles?v=${TILE_VERSION}` });
+  }
+  return id;
+}
+
+// MapLibre cannot repoint a layer at a different source, so the three stress
+// layers are rebuilt when the scenario changes. They must stay UNDER the
+// context and project layers, hence beforeId.
+function buildStressLayers() {
+  const src = ensureScenarioSource(state.scen);
+  for (const id of STRESS_LAYERS) if (map.getLayer(id)) map.removeLayer(id);
+  const below = ["plant_poly_gen", "demand_places", "gen_plants", "tyndp_polys",
+                 "proj_lines"].find(id => map.getLayer(id));
+  map.addLayer({ id: "bridges", type: "line", source: src, "source-layer": "branches",
+    filter: ["all", ["==", ["get", "bridge"], true]],
+    paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6], "line-width": 1.0,
+             "line-opacity": 0.6 } }, below);
+  map.addLayer({ id: "stress_existing", type: "line", source: src, "source-layer": "branches",
+    filter: stressFilter("line"),
+    paint: { "line-color": colorExpr("line"), "line-width": widthExpr("line") } }, below);
+  map.addLayer({ id: "stress_planned", type: "line", source: src, "source-layer": "branches",
+    filter: stressFilter("planned_line"),
+    paint: { "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
+             "line-width": widthExpr("planned") } }, below);
+}
+
 let setupDone = false;
 async function setup() {
   if (setupDone) return; setupDone = true;
@@ -356,12 +391,15 @@ async function setup() {
   } catch (e) { /* context degrades gracefully */ }
 
   map.addSource("base", { type: "vector",
-    url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_linework.pmtiles" });
+    url: `pmtiles://${PUBLIC_BASE}europe_grid_v23_linework.pmtiles?v=${TILE_VERSION}` });
   map.addSource("context", { type: "vector",
-    url: "pmtiles://" + PUBLIC_BASE + "europe_grid_v23_context.pmtiles" });
-  // bump ?v= on every tile rebuild: busts stale HTTP range caches
-  map.addSource("stress", { type: "vector",
-    url: "pmtiles://stress_v4.pmtiles?v=20260822-1" });
+    url: `pmtiles://${PUBLIC_BASE}europe_grid_v23_context.pmtiles?v=${TILE_VERSION}` });
+  // One PMTiles archive per scenario, added the first time that scenario is
+  // selected. PMTiles is served by HTTP range request, so adding a source
+  // costs only its header and directory - a viewer never transfers an
+  // archive it does not look at. Bump ?v= on every rebuild to bust stale
+  // range caches.
+  ensureScenarioSource(state.scen);
 
   map.addLayer({ id: "base_grid", type: "line", source: "base", "source-layer": "ac_lines",
     paint: { "line-color": "#c3cbd1", "line-width": 0.7 } });
@@ -410,36 +448,32 @@ async function setup() {
                "circle-radius": circleRadius(genMWExpr(), 0.6) } });
   }
 
-  map.addLayer({ id: "bridges", type: "line", source: "stress", "source-layer": "branches",
-    filter: ["all", ["==", ["get", "bridge"], true]],
-    paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6], "line-width": 1.0,
-             "line-opacity": 0.6 } });
-  map.addLayer({ id: "stress_existing", type: "line", source: "stress", "source-layer": "branches",
-    filter: stressFilter("line"),
-    paint: { "line-color": colorExpr("line"), "line-width": widthExpr("line") } });
-  map.addLayer({ id: "stress_planned", type: "line", source: "stress", "source-layer": "branches",
-    filter: stressFilter("planned_line"),
-    paint: { "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
-             "line-width": widthExpr("planned") } });
+  buildStressLayers();
 
-  map.addSource("tyndp", { type: "geojson", data: "tyndp_projects_2026.geojson" });
+  // TYNDP rides the public context tileset's never-drop pass. As a plain
+  // GeoJSON source MapLibre's own simplification silently discarded small
+  // features at low zoom (284 features rendered as 4 at z3).
   // Corridor POLYGONS are study areas, not routes: filled violet-blue with a
   // solid outline so they can never be misread as the dashed cyan project
   // LINES (they used to share one cyan and looked identical).
-  map.addLayer({ id: "tyndp_polys", type: "fill", source: "tyndp",
+  map.addLayer({ id: "tyndp_polys", type: "fill", source: "context",
+    "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
     layout: { visibility: "none" },
     paint: { "fill-color": "#6366f1", "fill-opacity": 0.14 } });
-  map.addLayer({ id: "tyndp_poly_outline", type: "line", source: "tyndp",
+  map.addLayer({ id: "tyndp_poly_outline", type: "line", source: "context",
+    "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
     layout: { visibility: "none" },
     paint: { "line-color": "#6366f1", "line-width": 1.4, "line-opacity": 0.85 } });
-  map.addLayer({ id: "tyndp_lines", type: "line", source: "tyndp",
+  map.addLayer({ id: "tyndp_lines", type: "line", source: "context",
+    "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "LineString"], tyndpYearFilter()],
     layout: { visibility: "none" },
     paint: { "line-color": "#06b6d4", "line-dasharray": [4, 1.6],
              "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.6, 8, 2.6, 12, 4.0] } });
-  map.addLayer({ id: "tyndp_points", type: "circle", source: "tyndp",
+  map.addLayer({ id: "tyndp_points", type: "circle", source: "context",
+    "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "Point"], tyndpYearFilter()],
     layout: { visibility: "none" },
     paint: { "circle-color": "#06b6d4", "circle-opacity": 0.85,
@@ -600,7 +634,11 @@ function wireControls() {
   const slider = document.getElementById("yearslider");
   slider.addEventListener("input", () => { state.year = +slider.value; refresh(); });
   document.querySelectorAll("input[name=scen]").forEach(r =>
-    r.addEventListener("change", () => { state.scen = r.value; refresh(); }));
+    r.addEventListener("change", () => {
+      state.scen = r.value;
+      if (map.getLayer("stress_existing")) buildStressLayers();
+      refresh();
+    }));
   document.querySelectorAll("input[name=st]").forEach(r =>
     r.addEventListener("change", () => { state.st = r.value; refresh(); }));
   document.querySelectorAll("input[name=mech]").forEach(r =>
@@ -623,7 +661,7 @@ function wirePopups() {
     const p = f.properties;
     const h = horizonFor(state.year, state.scen);
     let title, rows;
-    if (f.source === "tyndp") {
+    if (f.sourceLayer === "tyndp") {
       title = p.name || "TYNDP project";
       rows = [["type", p.kind + (p.typeOfElement ? " · " + p.typeOfElement : "")],
               ["commissioning", p.year || p.commissioningYear || "—"],
