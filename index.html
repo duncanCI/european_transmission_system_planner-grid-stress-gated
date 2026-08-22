@@ -337,6 +337,9 @@ function demandMWExpr() {
     const v = scens[state.scen] && scens[state.scen][h];
     if (v) branches.push(c, ["*", ["get", "d_share"], v]);
   }
+  // a match with no label/output pair is invalid and takes the layer down;
+  // an empty branch list means the scenario/horizon has no national totals
+  if (!branches.length) return 0;
   return ["match", ["get", "country"], ...branches, 0];
 }
 function genMWExpr() {
@@ -348,6 +351,7 @@ function genMWExpr() {
       if (v) branches.push(c + "|" + g, ["*", ["get", "g_share"], v]);
     }
   }
+  if (!branches.length) return 0;
   return ["match", ["concat", ["get", "country"], "|", ["get", "group"]], ...branches, 0];
 }
 function circleRadius(mwExpr, k) {
@@ -391,8 +395,24 @@ function ensureScenarioSource(scen) {
   if (!map.getSource(id)) {
     map.addSource(id, { type: "vector",
       url: `pmtiles://stress_v4_${scen}.pmtiles?v=${TILE_VERSION}` });
+    // Each scenario is a separate archive, so one missing or stale file would
+    // otherwise leave that scenario silently blank while the controls still
+    // claim to be showing it. Say so instead.
+    fetch(`stress_v4_${scen}.pmtiles?v=${TILE_VERSION}`, { headers: { Range: "bytes=0-127" } })
+      .then(r => { if (!r.ok) throw new Error(r.status); })
+      .catch(() => scenarioUnavailable(scen));
   }
   return id;
+}
+
+function scenarioUnavailable(scen) {
+  const bar = document.getElementById("holdbar");
+  if (!bar || bar.dataset.err === scen) return;
+  bar.dataset.err = scen;
+  bar.style.background = "#7c2d12";
+  bar.innerHTML = `<b>${SCEN_LABEL[scen] || scen} is unavailable.</b> Its tile archive ` +
+    `(stress_v4_${scen}.pmtiles) did not load, so the map is not showing that scenario. ` +
+    `Nothing below is ${SCEN_LABEL[scen] || scen} data — pick another scenario or report this.`;
 }
 
 // MapLibre cannot repoint a layer at a different source, so the three stress
@@ -405,7 +425,10 @@ function buildStressLayers() {
                  "proj_lines"].find(id => map.getLayer(id));
   map.addLayer({ id: "bridges", type: "line", source: src, "source-layer": "branches",
     filter: ["all", ["==", ["get", "bridge"], true]],
-    paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6], "line-width": 1.0,
+    paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6],
+             // rebuilt on every scenario switch, so read the current scale
+             // rather than baking 1.0 and discarding the user's setting
+             "line-width": 1.0 * state.lineScale,
              "line-opacity": 0.6 } }, below);
   map.addLayer({ id: "stress_existing", type: "line", source: src, "source-layer": "branches",
     filter: stressFilter("line"),
@@ -751,7 +774,9 @@ function wirePopups() {
       title = p.name || p.fid;
       rows = [
         ["rating (typed)", (p.s_nom_mva|0) + " MVA"],
-        ["headroom", p[`h_${s}`] != null ? p[`h_${s}`] + " GW of shaped transfer until the rating binds post-fault" : "—"],
+        ["headroom", p[`h_${s}`] == null ? "—"
+          : p[`h_${s}`] >= 999 ? "no binding limit found under any shaped transfer (headroom is reported up to a 999 GW cap; this is the cap, not a measurement)"
+          : p[`h_${s}`] + " GW of shaped transfer until the rating binds post-fault"],
         ["worst N-1 loading", p[`u_${s}`] != null ? (p[`u_${s}`]*100).toFixed(1) + "% of rating per GW transferred" : "—"],
         // low-zoom tiles are slim (numeric fields only); the binding strings
         // arrive from z6 up
