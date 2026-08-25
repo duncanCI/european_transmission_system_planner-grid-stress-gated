@@ -9,6 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
+<script src="permalink.js"></script>
+<script src="feedback.js"></script>
 <style>
   :root { --paper:#f5f7f6; --ink:#172026; --muted:#59666c; --rule:#c9d1cf; --panel:rgba(245,247,246,.97); }
   * { box-sizing:border-box; }
@@ -150,6 +152,7 @@
       <label for="linescale">Line thickness <output id="scaleout">1.0&times;</output></label>
       <input id="linescale" type="range" min="0.5" max="3" step="0.1" value="1">
       <button id="asmbtn" type="button">Assumptions register (what is ours, not the publisher's)</button>
+      <button id="fbbtn" type="button" hidden>Flag an issue or make a suggestion</button>
     </div>
     <details class="stylekey">
       <summary>Line styles: solid vs dashed</summary>
@@ -820,6 +823,9 @@ function wireControls() {
     r.addEventListener("change", () => { state.st = r.value; refresh(); }));
   document.querySelectorAll("input[name=mech]").forEach(r =>
     r.addEventListener("change", () => { state.mech = r.value; refresh(); }));
+  // Controls are live from here; a permalink drives them and depends on these
+  // handlers, so it must not apply before this point.
+  if (window.__permalinkReady) window.__permalinkReady();
   const sl = document.getElementById("linescale");
   if (sl) sl.addEventListener("input", () => {
     state.lineScale = +sl.value;
@@ -833,7 +839,13 @@ function wireControls() {
   });
 }
 
-function esc(s) { return String(s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;"); }
+// Quotes escaped too. This viewer interpolates feature values only into text
+// position today, but an attribute sink is one edit away and the public map
+// had exactly that bug.
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
 
 function wirePopups() {
   const layers = () => ["stress_existing", "stress_planned", "bridges",
@@ -959,7 +971,20 @@ function wirePopups() {
     }
     new maplibregl.Popup({ maxWidth: "330px" }).setLngLat(e.lngLat)
       .setHTML(`<div class="ptitle">${esc(title)}</div><table>` +
-        rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") + "</table>")
+        rows.map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join("") + "</table>" +
+        // Name what was actually clicked. p.fid only exists on the branches
+        // layer, so demand places and plants would otherwise be reported as
+        // branches carrying no feature id at all.
+        (window.FEEDBACK
+          ? `<div style="margin-top:6px">${FEEDBACK.popupLink(
+               p.fid ?? p.id ?? f.id ?? `${f.sourceLayer}@${e.lngLat.lat.toFixed(4)},${e.lngLat.lng.toFixed(4)}`,
+               title, e.lngLat,
+               f.sourceLayer === "branches"
+                 ? (f.layer && f.layer.id === "bridges" ? "bridge" : "branch")
+                 : f.sourceLayer === "places" ? "demand point"
+                 : (f.sourceLayer === "plants" || f.sourceLayer === "plant_polys") ? "power plant"
+                 : "feature")}</div>`
+          : ""))
       .addTo(map);
   });
   map.on("mousemove", e => {
@@ -989,7 +1014,9 @@ function wirePopups() {
         `<div class="topic">${esc(t)}</div>` + byTopic[t].map(a =>
           `<div class="item"><b>${esc(a.assumption)}</b>` +
           `<div><i>Basis.</i> ${esc(a.basis)}</div>` +
-          `<div class="bias"><i>Bias.</i> ${esc(a.bias)}</div></div>`).join("")
+          `<div class="bias"><i>Bias.</i> ${esc(a.bias)}</div>` +
+          `<div><a class="fbasm" href="#" data-asm="${esc(a.id)}">Disagree with this assumption?</a></div>` +
+          `</div>`).join("")
       ).join("");
       loaded = true;
     } catch (e) {
@@ -1004,7 +1031,80 @@ function wirePopups() {
   btn.addEventListener("click", open);
   document.getElementById("asmclose").addEventListener("click", () => { wrap.hidden = true; });
   wrap.addEventListener("click", e => { if (e.target === wrap) wrap.hidden = true; });
-  document.addEventListener("keydown", e => { if (e.key === "Escape") wrap.hidden = true; });
+  document.addEventListener("keydown", e => {
+    // The feedback modal can be opened from inside this one and claims Escape
+    // for itself; closing both at once loses the reader's place.
+    const fb = document.getElementById("fbwrap");
+    if (fb && !fb.hidden) return;
+    if (e.key === "Escape") wrap.hidden = true;
+  });
+})();
+
+// Feedback widget.
+//
+// NO GitHub target here, deliberately. This viewer carries the ENTSO-E TYNDP
+// project portfolio and RTE SDDR works, which are published by permission and
+// are NOT open data, so a report naming a scheme must not be routed to a
+// public issue tracker. Only the private channels - clipboard and email - are
+// offered. Do not add `github` to this configure call.
+if (window.FEEDBACK) {
+  FEEDBACK.configure({
+    viewer: "gated N-1 stress screen",
+    github: null,
+    email: "duncan@continuum.industries",
+    getContext: () => {
+      const c = map.getCenter();
+      return {
+        "map build": TILE_VERSION,
+        scenario: state.scen,
+        year: state.year,
+        state: state.st,
+        mechanism: state.mech,
+        centre: `${c.lat.toFixed(4)}, ${c.lng.toFixed(4)}`,
+        zoom: map.getZoom().toFixed(1),
+      };
+    },
+  });
+  const fbb = document.getElementById("fbbtn");
+  fbb.hidden = false;   // only shown once the widget is known to have loaded
+  fbb.addEventListener("click", () => FEEDBACK.open({ kind: "view" }));
+}
+
+// Shareable links. Event-driven, NOT a poll on map.isStyleLoaded(): that flag
+// stays false while the stress layers are being rebuilt, so a poll on it never
+// fires. What matters is that the controls a permalink drives exist.
+(function () {
+  var done = false;
+  function go() {
+    if (done || !window.PERMALINK) return;
+    if (!document.getElementById("yearslider")) return;   // wireControls() not run yet
+    done = true;
+    PERMALINK.init({
+      map: map,
+      state: state,
+      controls: {
+        scen: { type: "radio", name: "scen" },
+        st:   { type: "radio", name: "st" },
+        mech: { type: "radio", name: "mech" },
+        year: { type: "range", id: "yearslider" },
+      },
+      // A link that names a branch highlights it, so the recipient sees the one
+      // the reporter meant rather than hunting along a corridor.
+      onFeature: function (fid) {
+        var tries = 0;
+        (function focus() {
+          if (!map.getLayer("hl_selected")) {
+            if (tries++ < 50) setTimeout(focus, 200);
+            return;
+          }
+          map.setFilter("hl_selected", ["==", ["get", "fid"], String(fid)]);
+        })();
+      },
+    });
+  }
+  window.__permalinkReady = go;
+  map.on("idle", go);
+  setTimeout(go, 6000);
 })();
 </script>
 </body>
