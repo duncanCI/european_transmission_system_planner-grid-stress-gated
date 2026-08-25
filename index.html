@@ -1051,7 +1051,8 @@ if (window.FEEDBACK) {
   FEEDBACK.configure({
     viewer: "gated N-1 stress screen",
     github: null,
-    email: "duncan@continuum.industries",
+    // Split so the address is not a harvestable string in the page source.
+    email: ["duncan", "continuum.industries"],
     getContext: () => {
       const c = map.getCenter();
       return {
