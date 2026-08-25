@@ -1,7 +1,7 @@
 {
-  "build": "8847777ba6",
-  "features": 17752,
-  "planned_branches": 546,
+  "build": "130962340a",
+  "features": 69767,
+  "planned_branches": 908,
   "scenarios": [
     "HEV",
     "LEV",
@@ -9,19 +9,20 @@
   ],
   "areas": [
     "Continental",
+    "Continental sub-area (DE)",
+    "Continental sub-area (IT)",
     "GB",
     "Ireland all-island",
-    "Nordic",
-    "Sardinia"
+    "Nordic"
   ],
   "dropped_areas": [],
   "status": "screening-grade. GB gates re-run on this build: direction PASS (top-50 transfer-stressed corridors 92% within 10 km of NESO Beyond-2030 reinforcement corridors vs 72.7% random, permutation p=0.0005); magnitude PASS (138 matched routes, per-circuit reactance Spearman 0.754, median ratio 0.895; our top-3 stressed boundaries B6/B7a/B8 are NESO's top-3 published 2030 shortfalls). Continental cross-check NOT done. Gates rank the transfer mechanism, the like-for-like comparison with a boundary map",
   "transformers": "screened, not mapped in gated viewer v1",
   "dc_links": "v4.3: modelled as 1 GW converter-injection transfer patterns (swing/outage per GW); not flow-carrying branches, no relief modelled",
-  "tiling": "one archive per scenario, each in two zoom bands; all branches at all usable zooms (no feature dropping)",
+  "tiling": "one archive per scenario, each in two zoom bands (z0-5 slim, z6-9 full); all branches at all zooms, no feature dropping. Max zoom is 9, not 10, to keep each archive under the repository's 50 MB ceiling after the screen widened to 90 kV Europe-wide; geometry is quantised to about 19 m rather than 9.5 m, below this data's own OSM-derived positional accuracy, and viewers overzoom past z9 as before",
   "archives_mb": {
-    "hev": 22.6,
-    "lev": 22.6,
-    "ntp": 27.9
+    "hev": 39.2,
+    "lev": 39.2,
+    "ntp": 48.5
   }
 }
