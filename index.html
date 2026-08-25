@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js"></script>
-<script src="feedback.js"></script>
+<script src="permalink.js?v=4ccf96bf"></script>
+<script src="feedback.js?v=4ccf96bf"></script>
 <style>
   :root { --paper:#f5f7f6; --ink:#172026; --muted:#59666c; --rule:#c9d1cf; --panel:rgba(245,247,246,.97); }
   * { box-sizing:border-box; }
@@ -45,6 +45,17 @@
   #asm .bias { color:#7c2d12; }
   #asmclose { float:right; border:0; background:none; font-size:20px;
               cursor:pointer; color:#64748b; line-height:1; }
+  details.lgroup { border-top:1px solid #e2e8f0; }
+  details.lgroup:first-of-type { border-top:0; }
+  details.lgroup > summary { cursor:pointer; font-size:11px; font-weight:700;
+    text-transform:uppercase; letter-spacing:.03em; color:#475569;
+    padding:5px 0 4px; list-style:none; display:flex; align-items:center; gap:5px; }
+  details.lgroup > summary::-webkit-details-marker { display:none; }
+  details.lgroup > summary::before { content:"\25B8"; font-size:9px;
+    transition:transform .12s; color:#94a3b8; }
+  details.lgroup[open] > summary::before { transform:rotate(90deg); }
+  details.lgroup > summary:hover { color:#0f172a; }
+  .lgbody { padding:0 0 5px 10px; }
   .hold { background:#334155; color:#f1f5f9; font-size:12px; padding:6px 16px; }
   .ctl { font-size:12px; color:var(--muted); min-width:290px; }
   .ctl label { display:inline-flex; gap:4px; align-items:center; margin-right:8px; }
@@ -285,7 +296,8 @@ const map = new maplibregl.Map({
 });
 map.addControl(new maplibregl.AttributionControl({
   customAttribution: "Grid data &copy; OpenStreetMap contributors ODbL 1.0 · scenario shaping: " +
-    "ENTSO-E TYNDP 2026 (CC BY 4.0) · TYNDP project layer &copy; ENTSO-E (source acknowledged, " +
+    "ENTSO-E TYNDP 2026 (CC BY 4.0) · TYNDP project layer &copy; ENTSO-E (not open data — "
+    + "contact ENTSO-E for reuse terms; " +
     "preliminary draft portfolio) · screening-grade, not operational",
 }));
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
@@ -670,6 +682,8 @@ async function setup() {
              "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
 
   buildLegends();
+  // Controls AND layer toggles both exist now, so a permalink can be applied.
+  if (window.__permalinkReady) window.__permalinkReady();
   wirePopups();
   refresh();
 }
@@ -681,36 +695,79 @@ function toggle(ids, on) {
   for (const id of ids) if (map.getLayer(id))
     map.setLayoutProperty(id, "visibility", on ? "visible" : "none");
 }
+// Every toggle registers itself so a permalink can carry which layers are on.
+// Keyed on the first layer id; the link records only DEVIATIONS from the
+// defaults, so a default view carries no layer parameters at all.
+const LAYER_TOGGLES = {};
+
+function layerParams() {
+  const off = [], on = [];
+  for (const [key, t] of Object.entries(LAYER_TOGGLES)) {
+    if (!t.input) continue;
+    if (t.input.checked !== t.startOn) (t.input.checked ? on : off).push(key);
+  }
+  return { on: on.join(",") || null, off: off.join(",") || null };
+}
+
+function applyLayerParams(p) {
+  const want = new Map();
+  (p.on || "").split(",").filter(Boolean).forEach(k => want.set(k, true));
+  (p.off || "").split(",").filter(Boolean).forEach(k => want.set(k, false));
+  for (const [key, t] of Object.entries(LAYER_TOGGLES)) {
+    if (!t.input) continue;
+    const target = want.has(key) ? want.get(key) : t.startOn;
+    if (t.input.checked === target) continue;
+    t.input.checked = target;
+    t.input.dispatchEvent(new Event("change", { bubbles: true }));
+  }
+}
+
+/** A collapsible group of layer rows. */
+function legendGroup(parent, title, open) {
+  const d = document.createElement("details");
+  d.className = "lgroup";
+  if (open) d.open = true;
+  d.innerHTML = `<summary>${title}</summary><div class="lgbody"></div>`;
+  parent.appendChild(d);
+  return d.querySelector(".lgbody");
+}
+
 function legendRow(parent, swatchHtml, label, ids, startOn, title) {
   const row = document.createElement("label");
   row.className = "row";
   if (title) row.title = title;
   row.innerHTML = `<input type="checkbox" ${startOn ? "checked" : ""}>${swatchHtml}<span>${label}</span>`;
-  row.querySelector("input").addEventListener("change", e => toggle(ids, e.target.checked));
+  const input = row.querySelector("input");
+  input.addEventListener("change", e => toggle(ids, e.target.checked));
+  if (ids && ids.length) LAYER_TOGGLES[ids[0]] = { ids, startOn: !!startOn, input };
   parent.appendChild(row);
+  return row;
 }
 function buildLegends() {
   const dev = document.getElementById("legend-dev");
-  legendRow(dev, `<span class="swatch" style="border-color:#0e7490"></span>`,
+  const gNet = legendGroup(dev, "Network context", true);
+  legendRow(gNet, `<span class="swatch" style="border-color:#0e7490"></span>`,
             "DC links (v23 dataset)", ["dc_links"], true,
             "HVDC links and interconnectors from the open v23 dataset. In the screen each >=500 MW link is a 1 GW converter-swing transfer pattern - covering schedule-swing and full-outage stress per GW - not a flow-carrying branch; no relief is modelled");
-  legendRow(dev, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
+  legendRow(gNet, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
             "Planned projects by year", ["proj_lines", "proj_points"], false,
             "Public development plans; violet = shown by selected year");
-  legendRow(dev, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
+  const gTy = legendGroup(dev, "ENTSO-E TYNDP 2026 portfolio", false);
+  legendRow(gTy, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
             "TYNDP 2026 lines &amp; storage (ENTSO-E)",
             ["tyndp_lines", "tyndp_points"], false,
-            "ENTSO-E TYNDP 2026 draft portfolio (preliminary) - source acknowledged; year-gated by the slider; transmission projects as dashed cyan lines, storage as dots; not represented in the flow model");
-  legendRow(dev, `<span class="swatch dot" style="background:#6366f1;opacity:.35;border-radius:2px;width:22px;height:10px"></span>`,
+            "ENTSO-E TYNDP 2026 draft portfolio (preliminary). \u00a9 ENTSO-E \u2014 not open data; contact ENTSO-E for reuse terms. Year-gated by the slider; transmission projects as dashed cyan lines, storage as dots; not represented in the flow model");
+  legendRow(gTy, `<span class="swatch dot" style="background:#6366f1;opacity:.35;border-radius:2px;width:22px;height:10px"></span>`,
             "TYNDP 2026 study corridors (areas)",
             ["tyndp_polys", "tyndp_poly_outline"], false,
             "Translucent violet-blue FILLS are study corridors/areas from the TYNDP 2026 draft portfolio - broad zones under study, NOT routes and NOT lines; year-gated by the slider; not represented in the flow model");
   if (TOTALS) {
-    legendRow(dev, `<span class="swatch dot" style="background:#0284c7;opacity:.6"></span>`,
+    const gScen = legendGroup(dev, "Demand, generation &amp; flexibility", false);
+    legendRow(gScen, `<span class="swatch dot" style="background:#0284c7;opacity:.6"></span>`,
               "TYNDP demand at OSM places", ["demand_places"], false);
-    legendRow(dev, `<span class="swatch dot" style="background:linear-gradient(120deg,#0d9488 30%,#f59e0b 30% 60%,#2563eb 60%)"></span>`,
+    legendRow(gScen, `<span class="swatch dot" style="background:linear-gradient(120deg,#0d9488 30%,#f59e0b 30% 60%,#2563eb 60%)"></span>`,
               "TYNDP generation at OSM plants", ["gen_plants", "plant_poly_gen"], false);
-    legendRow(dev, `<span class="swatch dot" style="background:#db2777;opacity:.7"></span>`,
+    legendRow(gScen, `<span class="swatch dot" style="background:#db2777;opacity:.7"></span>`,
               "Flexibility — batteries (TYNDP GW)", ["flex_batteries", "plant_poly_flex"], false,
               "Battery storage at OSM sites, scaled by national TYNDP 2026 battery power (GW) — shown separately from generation");
     const ddRow = document.createElement("label");
@@ -727,7 +784,7 @@ function buildLegends() {
         });
       }
       refresh(); });
-    dev.appendChild(ddRow);
+    gScen.appendChild(ddRow);
   }
   renderStressLegend();
 }
@@ -825,7 +882,9 @@ function wireControls() {
     r.addEventListener("change", () => { state.mech = r.value; refresh(); }));
   // Controls are live from here; a permalink drives them and depends on these
   // handlers, so it must not apply before this point.
-  if (window.__permalinkReady) window.__permalinkReady();
+  // NOT signalled here: wireControls() runs at the top of setup(), before
+  // buildLegends() creates the layer toggles, and a permalink carrying layer
+  // state would find nothing to apply and then overwrite it with the defaults.
   const sl = document.getElementById("linescale");
   if (sl) sl.addEventListener("input", () => {
     state.lineScale = +sl.value;
@@ -1043,7 +1102,7 @@ function wirePopups() {
 // Feedback widget.
 //
 // NO GitHub target here, deliberately. This viewer carries the ENTSO-E TYNDP
-// project portfolio and RTE SDDR works, which are published by permission and
+// project portfolio and RTE SDDR works, which are not open data and
 // are NOT open data, so a report naming a scheme must not be routed to a
 // public issue tracker. Only the private channels - clipboard and email - are
 // offered. Do not add `github` to this configure call.
@@ -1078,7 +1137,8 @@ if (window.FEEDBACK) {
   var done = false;
   function go() {
     if (done || !window.PERMALINK) return;
-    if (!document.getElementById("yearslider")) return;   // wireControls() not run yet
+    if (!document.getElementById("yearslider")) return;   // controls not present
+    if (!Object.keys(LAYER_TOGGLES).length) return;       // legend not built
     done = true;
     PERMALINK.init({
       map: map,
@@ -1089,6 +1149,9 @@ if (window.FEEDBACK) {
         mech: { type: "radio", name: "mech" },
         year: { type: "range", id: "yearslider" },
       },
+      // Which layers are showing is part of "the view".
+      extra: layerParams,
+      applyExtra: applyLayerParams,
       // A link that names a branch highlights it, so the recipient sees the one
       // the reporter meant rather than hunting along a corridor.
       onFeature: function (fid) {
