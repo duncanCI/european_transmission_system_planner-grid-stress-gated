@@ -140,7 +140,7 @@
       <label><input type="radio" name="mech" value="t"> bulk transfer</label>
       <label><input type="radio" name="mech" value="c"> DC swing</label><br>
       network: <label><input type="radio" name="tier" value="t" checked> transmission &ge;220 kV</label>
-      <label><input type="radio" name="tier" value="d"> sub-transmission 90&ndash;219 kV</label>
+      <label><input type="radio" name="tier" value="d"> sub-transmission 60&ndash;219 kV</label>
       <label><input type="radio" name="tier" value="all"> both</label>
     </div>
     <div id="readout" style="font-size:11px; color:var(--muted); margin-top:1px;"></div>
@@ -397,7 +397,7 @@ const OTDF_CUTOFF_MW = 20;          // |OTDF| >= 0.02 at a 1 GW probe
 // country, because the 90 kV floor sorts by voltage NUMBER rather than system
 // role: it admits Germany's 110 kV and GB's 132 kV distribution tiers while
 // excluding France's 63 kV, Portugal's 60 kV and Denmark's 60 kV outright.
-const TIER_BAND = { t: [220, 100000], d: [90, 219], all: [90, 100000] };
+const TIER_BAND = { t: [220, 100000], d: [60, 219], all: [60, 100000] };
 function exposed(st) {
   return [">=", ["*", ["coalesce", ["get", uField(st)], 0],
                       ["coalesce", ["get", "s_nom_mva"], 0]], OTDF_CUTOFF_MW];
@@ -501,23 +501,46 @@ const STATIC_LINE_WIDTHS = {
   proj_lines:  [[4, 1.2], [8, 2.0], [12, 3.4]],
   bridges:     [[4, 1.0], [8, 1.0], [12, 1.0]],
 };
-const STRESS_LAYERS = ["bridges", "stress_unexposed", "stress_existing", "stress_planned"];
 
-function stressSourceId(scen) { return "stress_" + scen; }
+
+// Two archives per scenario, one per zoom band. One joined archive reached
+// 59 MB once the screen carried 107,868 features, past the repository ceiling;
+// splitting the bands costs nothing because PMTiles is served by range request,
+// so a viewer transfers only the tiles in view either way.
+const BANDS = ["lo", "hi"];
+const BAND_ZOOM = { lo: { maxzoom: 6 }, hi: { minzoom: 6 } };
+function stressSourceId(scen, band) { return `stress_${scen}_${band}`; }
 
 function ensureScenarioSource(scen) {
-  const id = stressSourceId(scen);
-  if (!map.getSource(id)) {
-    map.addSource(id, { type: "vector",
-      url: `pmtiles://stress_v4_${scen}.pmtiles?v=${TILE_VERSION}` });
-    // Each scenario is a separate archive, so one missing or stale file would
-    // otherwise leave that scenario silently blank while the controls still
-    // claim to be showing it. Say so instead.
-    fetch(`stress_v4_${scen}.pmtiles?v=${TILE_VERSION}`, { headers: { Range: "bytes=0-127" } })
+  for (const band of BANDS) {
+    const id = stressSourceId(scen, band);
+    if (map.getSource(id)) continue;
+    const file = `stress_v4_${scen}_${band}.pmtiles`;
+    map.addSource(id, { type: "vector", url: `pmtiles://${file}?v=${TILE_VERSION}` });
+    // One missing archive would leave a zoom band silently blank while the
+    // controls still claim to be showing that scenario. Say so instead.
+    fetch(`${file}?v=${TILE_VERSION}`, { headers: { Range: "bytes=0-127" } })
       .then(r => { if (!r.ok) throw new Error(r.status); })
       .catch(() => scenarioUnavailable(scen));
   }
-  return id;
+  return BANDS.map(b => stressSourceId(scen, b));
+}
+
+// A gate verdict belongs where the reader is looking. The manifest used to
+// assert PASS from a hardcoded string; it now reports what the gates actually
+// returned, and anything other than PASS is said up front.
+function gateNotice(status) {
+  if (!status || /direction PASS/.test(status)) return;
+  const bar = document.getElementById("holdbar");
+  if (!bar) return;
+  if (!bar.dataset.orig) bar.dataset.orig = bar.innerHTML;
+  bar.style.background = "#7c2d12";
+  bar.innerHTML = "<b>Validation: the GB direction gate did NOT pass on this "
+    + "build.</b> The spatial signal is strong \u2014 top-stressed corridors fall "
+    + "in NESO's reinforcement corridors 86% of the time against 61.9% at "
+    + "random, p=0.0005 \u2014 but our top boundary set overlaps NESO's "
+    + "published set by 44.4% against a 50% threshold, so corridor RANKING is "
+    + "unvalidated. Do not quote one corridor as more stressed than another.";
 }
 
 function scenarioUnavailable(scen) {
@@ -533,48 +556,56 @@ function scenarioUnavailable(scen) {
 // MapLibre cannot repoint a layer at a different source, so the three stress
 // layers are rebuilt when the scenario changes. They must stay UNDER the
 // context and project layers, hence beforeId.
-function buildStressLayers() {
-  const src = ensureScenarioSource(state.scen);
-  for (const id of STRESS_LAYERS) if (map.getLayer(id)) map.removeLayer(id);
-  const below = ["plant_poly_gen", "demand_places", "gen_plants", "tyndp_polys",
-                 "proj_lines"].find(id => map.getLayer(id));
-  map.addLayer({ id: "bridges", type: "line", source: src, "source-layer": "branches",
-    filter: ["all", ["==", ["get", "bridge"], true]],
-    paint: { "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6],
-             // rebuilt on every scenario switch, so read the current scale
-             // rather than baking 1.0 and discarding the user's setting
-             "line-width": 1.0 * state.lineScale,
-             "line-opacity": 0.6 } }, below);
-  // Screened and found not meaningfully exposed. Distinct from BOTH a result
-  // and the unscreened context linework, so "assessed and comfortable" can
-  // never be read as "not assessed" or vice versa.
-  map.addLayer({ id: "stress_unexposed", type: "line", source: src, "source-layer": "branches",
-    filter: ["all", ["in", ["get", "kind"], ["literal", ["line", "planned_line"]]],
-             ["!=", ["get", "bridge"], true],
-             ["!", exposed(state.st === "delta" ? "p" : state.st)]],
-    paint: { "line-color": "#7f9bb0", "line-opacity": 0.4,
-             "line-width": 0.6 * state.lineScale } }, below);
-  map.addLayer({ id: "stress_existing", type: "line", source: src, "source-layer": "branches",
-    filter: stressFilter("line"),
-    paint: { "line-color": colorExpr("line"), "line-width": widthExpr("line") } }, below);
-  map.addLayer({ id: "stress_planned", type: "line", source: src, "source-layer": "branches",
-    filter: stressFilter("planned_line"),
-    paint: { "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
-             "line-width": widthExpr("planned") } }, below);
-  // "why is this branch stressed": the selected branch and the outage that
-  // drives its worst case, drawn on top of everything so the pair is legible
-  // wherever they are. NONE filter until something is clicked.
-  map.addLayer({ id: "hl_binding", type: "line", source: src, "source-layer": "branches",
-    filter: ["==", ["get", "fid"], "\u0000"],
-    paint: { "line-color": "#f59e0b", "line-width": 7, "line-opacity": 0.55,
-             "line-blur": 1.5 } });
-  map.addLayer({ id: "hl_selected", type: "line", source: src, "source-layer": "branches",
-    filter: ["==", ["get", "fid"], "\u0000"],
-    paint: { "line-color": "#111827", "line-width": 3.2, "line-opacity": 0.9,
-             "line-dasharray": [1.4, 1.0] } });
+const STRESS_SPECS = [
+  { id: "bridges", filter: () => ["all", ["==", ["get", "bridge"], true]],
+    paint: () => ({ "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6],
+                    "line-width": 1.0 * state.lineScale, "line-opacity": 0.6 }) },
+  { id: "stress_unexposed",
+    filter: () => ["all", ["in", ["get", "kind"], ["literal", ["line", "planned_line"]]],
+                   ["!=", ["get", "bridge"], true],
+                   ["!", exposed(state.st === "delta" ? "p" : state.st)]],
+    paint: () => ({ "line-color": "#7f9bb0", "line-opacity": 0.4,
+                    "line-width": 0.6 * state.lineScale }) },
+  { id: "stress_existing", filter: () => stressFilter("line"),
+    paint: () => ({ "line-color": colorExpr("line"), "line-width": widthExpr("line") }) },
+  { id: "stress_planned", filter: () => stressFilter("planned_line"),
+    paint: () => ({ "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
+                    "line-width": widthExpr("planned") }) },
+  { id: "hl_binding", filter: () => ["==", ["get", "fid"], "\u0000"],
+    paint: () => ({ "line-color": "#f59e0b", "line-width": 7,
+                    "line-opacity": 0.55, "line-blur": 1.5 }) },
+  { id: "hl_selected", filter: () => ["==", ["get", "fid"], "\u0000"],
+    paint: () => ({ "line-color": "#111827", "line-width": 3.2,
+                    "line-opacity": 0.9, "line-dasharray": [1.4, 1.0] }) },
+];
+
+/** Every stress layer id, both bands - the list the rest of the map iterates. */
+function stressLayerIds(prefixes) {
+  const want = prefixes || STRESS_SPECS.map(sp => sp.id);
+  return want.flatMap(id => BANDS.map(b => `${id}__${b}`));
 }
 
-const HL_LAYERS = ["hl_binding", "hl_selected"];
+// MapLibre cannot repoint a layer at a different source, so the stress layers
+// are rebuilt when the scenario changes. They must stay UNDER the context and
+// project layers, hence beforeId.
+function buildStressLayers() {
+  ensureScenarioSource(state.scen);
+  for (const id of stressLayerIds()) if (map.getLayer(id)) map.removeLayer(id);
+  const below = ["plant_poly_gen", "demand_places", "gen_plants", "tyndp_polys",
+                 "proj_lines"].find(id => map.getLayer(id));
+  for (const spec of STRESS_SPECS) {
+    for (const band of BANDS) {
+      map.addLayer({
+        id: `${spec.id}__${band}`, type: "line",
+        source: stressSourceId(state.scen, band), "source-layer": "branches",
+        ...BAND_ZOOM[band],
+        filter: spec.filter(), paint: spec.paint(),
+      }, spec.id.startsWith("hl_") ? undefined : below);
+    }
+  }
+}
+
+const HL_LAYERS = stressLayerIds(["hl_binding", "hl_selected"]);
 function clearHighlight() {
   for (const id of HL_LAYERS)
     if (map.getLayer(id)) map.setFilter(id, ["==", ["get", "fid"], "\u0000"]);
@@ -586,12 +617,12 @@ function clearHighlight() {
 // outage binds it. The driving transfer is a pattern, not a feature, so it is
 // named rather than drawn.
 function highlightDrivers(props, suffix) {
-  if (!map.getLayer("hl_selected")) return;
+  if (!map.getLayer("hl_selected__hi")) return;
   const binding = props[`b_${suffix}`];
   const driver = props[`d_${suffix}`];
-  map.setFilter("hl_selected", ["==", ["get", "fid"], String(props.fid)]);
+  for (const b of BANDS) map.setFilter(`hl_selected__${b}`, ["==", ["get", "fid"], String(props.fid)]);
   const isBranch = binding && !/^none/.test(binding);
-  map.setFilter("hl_binding",
+  for (const b of BANDS) map.setFilter(`hl_binding__${b}`,
     isBranch ? ["==", ["get", "fid"], String(binding)]
              : ["==", ["get", "fid"], "\u0000"]);
 
@@ -623,7 +654,11 @@ async function setup() {
   wireControls();   // controls live from the start; refresh() guards on layers
   try {
     const mf = await fetch("stress_manifest.json", { cache: "no-store" });
-    if (mf.ok) TILE_VERSION = (await mf.json()).build || TILE_VERSION;
+    if (mf.ok) {
+      const meta = await mf.json();
+      TILE_VERSION = meta.build || TILE_VERSION;
+      gateNotice(meta.status);
+    }
   } catch (e) { /* fall back to the unset stamp rather than blocking setup */ }
   try {
     const tj = await fetch(PUBLIC_BASE + "scenario_totals.json");
@@ -879,7 +914,7 @@ function tierNotice() {
   bar.style.background = "#7c2d12";
   bar.innerHTML = state.tier === "d"
     ? "<b>Sub-transmission tier \u2014 compare within a country, never between them.</b> "
-    + "The 90 kV floor sorts by voltage number, not system role: it admits Germany's "
+    + "The floor now reaches 60 kV so every country's sub-transmission tier is present, but coverage still differs: OpenStreetMap has far more of Germany's "
     + "110 kV and GB's 132 kV distribution tiers but excludes France's 63 kV, Portugal's "
     + "60 kV and Denmark's 60 kV. A country's position here largely reflects how much of "
     + "its sub-transmission is in OpenStreetMap at all \u2014 France shows only 44 exposed "
@@ -893,19 +928,27 @@ function refresh() {
   const h = horizonFor(state.year, state.scen);
   document.getElementById("yearout").textContent = state.year;
   document.getElementById("horizonout").textContent = "· horizon " + h;
-  if (!map.getLayer("stress_existing")) return;  // layers not up yet
+  if (!map.getLayer("stress_existing__hi")) return;  // layers not up yet
   document.querySelectorAll("input[name=scen]").forEach(r => {
     const ok = r.value === "ntp" || state.year >= 2033;
     r.parentElement.classList.toggle("off", !ok);
   });
-  map.setPaintProperty("stress_existing", "line-color", colorExpr("line"));
-  map.setPaintProperty("stress_existing", "line-width", widthExpr("line"));
-  map.setPaintProperty("stress_planned", "line-color", colorExpr("planned"));
-  map.setPaintProperty("stress_planned", "line-width", widthExpr("planned"));
-  map.setFilter("stress_existing", stressFilter("line"));
-  map.setFilter("stress_planned", stressFilter("planned_line"));
-  map.setLayoutProperty("stress_planned", "visibility",
-    state.st === "e" ? "none" : "visible");
+  for (const band of BANDS) {
+    map.setPaintProperty(`stress_existing__${band}`, "line-color", colorExpr("line"));
+    map.setPaintProperty(`stress_existing__${band}`, "line-width", widthExpr("line"));
+    map.setPaintProperty(`stress_planned__${band}`, "line-color", colorExpr("planned"));
+    map.setPaintProperty(`stress_planned__${band}`, "line-width", widthExpr("planned"));
+    map.setFilter(`stress_existing__${band}`, stressFilter("line"));
+    map.setFilter(`stress_planned__${band}`, stressFilter("planned_line"));
+    map.setFilter(`stress_unexposed__${band}`,
+      ["all", ["in", ["get", "kind"], ["literal", ["line", "planned_line"]]],
+       ["!=", ["get", "bridge"], true],
+       ["!", exposed(state.st === "delta" ? "p" : state.st)]]);
+  }
+  for (const band of BANDS) {
+    map.setLayoutProperty(`stress_planned__${band}`, "visibility",
+      state.st === "e" ? "none" : "visible");
+  }
   for (const [id, kind] of [["proj_lines", "dated"], ["proj_points", "dated"]]) {
     if (!map.getLayer(id)) continue;
     const gf = map.getFilter(id);
@@ -946,7 +989,7 @@ function wireControls() {
     r.addEventListener("change", () => {
       state.scen = r.value;
       clearHighlight();
-      if (map.getLayer("stress_existing")) buildStressLayers();
+      if (map.getLayer("stress_existing__hi")) buildStressLayers();
       refresh();
     }));
   document.querySelectorAll("input[name=st]").forEach(r =>
@@ -956,7 +999,7 @@ function wireControls() {
   document.querySelectorAll("input[name=tier]").forEach(r =>
     r.addEventListener("change", () => {
       state.tier = r.value; tierNotice();
-      if (map.getLayer("stress_existing")) buildStressLayers();
+      if (map.getLayer("stress_existing__hi")) buildStressLayers();
       refresh();
     }));
   // Controls are live from here; a permalink drives them and depends on these
@@ -986,7 +1029,7 @@ function esc(s) {
 }
 
 function wirePopups() {
-  const layers = () => ["stress_existing", "stress_planned", "bridges",
+  const layers = () => [...stressLayerIds(["stress_existing", "stress_planned", "bridges"]),
                         "dc_links",
                         "tyndp_lines", "tyndp_points", "tyndp_polys",
                         "proj_lines", "proj_points", "demand_places", "gen_plants",
@@ -1032,7 +1075,7 @@ function wirePopups() {
                 ? "1 GW converter-swing transfer pattern (schedule swing / outage per GW); not a flow-carrying branch, no relief modelled"
                 : "shown for context only (< 500 MW or unrated - no swing pattern)"],
               ["capacity provenance", p.p_nom_source || "unknown"]];
-    } else if (f.layer && f.layer.id === "bridges") {
+    } else if (f.layer && f.layer.id.startsWith("bridges")) {
       title = p.name || p.fid;
       rows = [["type", "connection radial (bridge)"],
               ["screening", "its outage islands the network — flagged, not scored"],
@@ -1101,7 +1144,7 @@ function wirePopups() {
               ["provenance", "inferred: TYNDP 2026 x OSM plant weights"]];
     } else { return; }
     // clicking a screened branch also shows WHAT drives its worst case
-    if (f.sourceLayer === "branches" && !(f.layer && f.layer.id === "bridges")) {
+    if (f.sourceLayer === "branches" && !(f.layer && f.layer.id.startsWith("bridges"))) {
       highlightDrivers(p, `${state.scen}_${horizonFor(state.year, state.scen)}_` +
                           `${state.st === "delta" ? "p" : state.st}`);
     } else {
@@ -1118,7 +1161,7 @@ function wirePopups() {
                p.fid ?? p.id ?? f.id ?? `${f.sourceLayer}@${e.lngLat.lat.toFixed(4)},${e.lngLat.lng.toFixed(4)}`,
                title, e.lngLat,
                f.sourceLayer === "branches"
-                 ? (f.layer && f.layer.id === "bridges" ? "bridge" : "branch")
+                 ? (f.layer && f.layer.id.startsWith("bridges") ? "bridge" : "branch")
                  : f.sourceLayer === "places" ? "demand point"
                  : (f.sourceLayer === "plants" || f.sourceLayer === "plant_polys") ? "power plant"
                  : "feature")}</div>`
@@ -1236,11 +1279,12 @@ if (window.FEEDBACK) {
       onFeature: function (fid) {
         var tries = 0;
         (function focus() {
-          if (!map.getLayer("hl_selected")) {
+          if (!map.getLayer("hl_selected__hi")) {
             if (tries++ < 50) setTimeout(focus, 200);
             return;
           }
-          map.setFilter("hl_selected", ["==", ["get", "fid"], String(fid)]);
+          for (const b of BANDS) map.setFilter(`hl_selected__${b}`,
+            ["==", ["get", "fid"], String(fid)]);
         })();
       },
     });
