@@ -138,7 +138,10 @@
       <span title="Which stress mechanism the colours show. Bulk transfer is what boundary reinforcement addresses; DC swing is the local loss/swing of a converter infeed. Worst of both is the conservative envelope.">stress:</span>
       <label><input type="radio" name="mech" value="env" checked> worst of both</label>
       <label><input type="radio" name="mech" value="t"> bulk transfer</label>
-      <label><input type="radio" name="mech" value="c"> DC swing</label>
+      <label><input type="radio" name="mech" value="c"> DC swing</label><br>
+      network: <label><input type="radio" name="tier" value="t" checked> transmission &ge;220 kV</label>
+      <label><input type="radio" name="tier" value="d"> sub-transmission 90&ndash;219 kV</label>
+      <label><input type="radio" name="tier" value="all"> both</label>
     </div>
     <div id="readout" style="font-size:11px; color:var(--muted); margin-top:1px;"></div>
   </div>
@@ -260,7 +263,7 @@
 </div>
 <script>
 const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
-const state = { year: 2030, scen: "ntp", st: "delta", mech: "env",
+const state = { year: 2030, scen: "ntp", st: "delta", mech: "env", tier: "t",
                 ddelta: false, lineScale: 1 };
 const HORIZONS = { ntp: [2030, 2035, 2040], lev: [2035, 2040], hev: [2035, 2040] };
 const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
@@ -384,14 +387,26 @@ function widthExpr(layerKind) {
 //     distribution factor is u_ * s_nom / 1000 and the cutoff is u_*s_nom >= 20.
 //   * not islanding-bound (bridge), which biases the result optimistic.
 const OTDF_CUTOFF_MW = 20;          // |OTDF| >= 0.02 at a 1 GW probe
-const REPORTED_MIN_KV = 220;
+// Two tiers, assessed separately and never pooled. PSS/E builds its monitored
+// set from .sub subsystems with a KVRANGE selector and results are read WITHIN
+// a band, for exactly the reason this map demonstrates: pooling compares
+// voltage mixes, not constraint.
+//
+// The tiers are NOT equivalent products. Transmission (>=220 kV) is comparable
+// between countries. Sub-transmission (90-219 kV) is comparable only WITHIN a
+// country, because the 90 kV floor sorts by voltage NUMBER rather than system
+// role: it admits Germany's 110 kV and GB's 132 kV distribution tiers while
+// excluding France's 63 kV, Portugal's 60 kV and Denmark's 60 kV outright.
+const TIER_BAND = { t: [220, 100000], d: [90, 219], all: [90, 100000] };
 function exposed(st) {
   return [">=", ["*", ["coalesce", ["get", uField(st)], 0],
                       ["coalesce", ["get", "s_nom_mva"], 0]], OTDF_CUTOFF_MW];
 }
 function reportedSet() {
+  const band = TIER_BAND[state.tier] || TIER_BAND.t;
+  const kv = ["coalesce", ["get", "voltage_kv"], 0];
   return [["!=", ["get", "bridge"], true],
-          [">=", ["coalesce", ["get", "voltage_kv"], 0], REPORTED_MIN_KV]];
+          [">=", kv, band[0]], ["<=", kv, band[1]]];
 }
 
 function stressFilter(kind) {
@@ -854,6 +869,26 @@ function renderStressLegend() {
   }
 }
 
+// The sub-transmission tier is a within-country product. Say so ON the map,
+// not in a panel the reader may never open.
+function tierNotice() {
+  const bar = document.getElementById("holdbar");
+  if (!bar) return;
+  if (!bar.dataset.orig) bar.dataset.orig = bar.innerHTML;
+  if (state.tier === "t") { bar.style.background = ""; bar.innerHTML = bar.dataset.orig; return; }
+  bar.style.background = "#7c2d12";
+  bar.innerHTML = state.tier === "d"
+    ? "<b>Sub-transmission tier \u2014 compare within a country, never between them.</b> "
+    + "The 90 kV floor sorts by voltage number, not system role: it admits Germany's "
+    + "110 kV and GB's 132 kV distribution tiers but excludes France's 63 kV, Portugal's "
+    + "60 kV and Denmark's 60 kV. A country's position here largely reflects how much of "
+    + "its sub-transmission is in OpenStreetMap at all \u2014 France shows only 44 exposed "
+    + "branches against Germany's 550."
+    : "<b>Both tiers shown together.</b> Transmission and sub-transmission are not "
+    + "comparable with each other, and the sub-transmission tier is not comparable "
+    + "between countries. Read this view for interaction, not for ranking.";
+}
+
 function refresh() {
   const h = horizonFor(state.year, state.scen);
   document.getElementById("yearout").textContent = state.year;
@@ -918,6 +953,12 @@ function wireControls() {
     r.addEventListener("change", () => { state.st = r.value; refresh(); }));
   document.querySelectorAll("input[name=mech]").forEach(r =>
     r.addEventListener("change", () => { state.mech = r.value; refresh(); }));
+  document.querySelectorAll("input[name=tier]").forEach(r =>
+    r.addEventListener("change", () => {
+      state.tier = r.value; tierNotice();
+      if (map.getLayer("stress_existing")) buildStressLayers();
+      refresh();
+    }));
   // Controls are live from here; a permalink drives them and depends on these
   // handlers, so it must not apply before this point.
   // NOT signalled here: wireControls() runs at the top of setup(), before
