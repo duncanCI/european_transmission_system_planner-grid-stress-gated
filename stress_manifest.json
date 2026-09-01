@@ -1,5 +1,5 @@
 {
-  "build": "fe5176e717",
+  "build": "e69d6b84e1",
   "features": 107868,
   "planned_branches": 916,
   "scenarios": [
@@ -17,7 +17,7 @@
     "Nordic"
   ],
   "dropped_areas": [],
-  "status": "screening-grade. GB gates re-run on THIS build and reported verbatim: direction FAIL. (top-50 transfer-stressed corridors 86% within 10.0 km of NESO Beyond-2030 reinforcement corridors vs 61.9% random, permutation p=0.0005. boundary overlap 44.4% against a 50% pass threshold - this is the leg that decides the verdict. magnitude PENDING. DIRECTION GATE NOT PASSED: the spatial signal is strong (p<0.01 and the B6 chain ranks) but our top boundary set overlaps NESO's by less than half, so treat corridor RANKING as unvalidated. Continental cross-check NOT done.",
+  "status": "screening-grade. GB gates re-run on THIS build and reported verbatim: direction PASS. (top-50 transfer-stressed corridors 88% within 10.0 km of NESO Beyond-2030 reinforcement corridors vs 61.1% random, permutation p=0.0. boundary overlap 50.0% against a 50% pass threshold - this is the leg that decides the verdict. magnitude legs: parameter cross-check PASS, magnitude ranking PASS. Continental cross-check NOT done.",
   "transformers": "screened, not mapped in gated viewer v1",
   "dc_links": "v4.3: modelled as 1 GW converter-injection transfer patterns (swing/outage per GW); not flow-carrying branches, no relief modelled",
   "tiling": "TWO archives per scenario, one per zoom band: _lo (z0-5, slim attributes) and _hi (z6-9, full). Formerly (z0-5 slim, z6-9 full); all branches at all zooms, no feature dropping. Max zoom is 9, not 10, to keep each archive under the repository's 50 MB ceiling after the screen widened to 90 kV Europe-wide; geometry is quantised to about 19 m rather than 9.5 m, below this data's own OSM-derived positional accuracy, and viewers overzoom past z9 as before",

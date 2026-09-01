@@ -9,17 +9,28 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=fe5176e717"></script>
-<script src="feedback.js?v=fe5176e717"></script>
+<script src="permalink.js?v=e69d6b84e1"></script>
+<script src="feedback.js?v=e69d6b84e1"></script>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
 <style>
-  :root { --paper:#f5f7f6; --ink:#172026; --muted:#59666c; --rule:#c9d1cf; --panel:rgba(245,247,246,.97); }
+  /* Continuum Industries / Optioneer brand tokens, read from the shipped app
+     theme (Vuetify: primary #29194F, secondary #1CCDD8, warning #E8590C,
+     variants #330084/#3E0CBA, pale teal #9CEDF2) and its ground #EEF0F2.
+     Chrome only: the DATA colours (headroom ramp, voltage classes, planned
+     violet, DC teal) are semantic and deliberately unchanged. */
+  :root { --paper:#EEF0F2; --ink:#231A45; --muted:#5B5773; --rule:#CED6D7;
+          --panel:rgba(255,255,255,.97);
+          --brand:#29194F; --brand-2:#330084; --link:#3E0CBA;
+          --teal:#1CCDD8; --teal-soft:#9CEDF2; --warn:#E8590C; --apricot:#FDC182; }
   * { box-sizing:border-box; }
   html,body { height:100%; margin:0; color:var(--ink); background:var(--paper);
-              font-family:-apple-system,"Segoe UI",Roboto,Arial,sans-serif; }
+              font-family:Roboto,-apple-system,"Segoe UI",Arial,sans-serif; }
   body { display:grid; grid-template-rows:auto auto minmax(0,1fr); overflow:hidden; }
   header { z-index:4; padding:9px 16px; border-bottom:1px solid var(--rule); background:var(--panel);
            display:flex; justify-content:space-between; align-items:center; gap:18px; flex-wrap:wrap; }
-  h1 { margin:0; font:600 18px/1.2 Georgia,serif; }
+  h1 { margin:0; font:700 18px/1.2 Roboto,sans-serif; color:var(--brand); letter-spacing:.01em; }
   .subtitle { color:var(--muted); font-size:12px; margin-top:2px; max-width:860px; }
 
   /* Assumptions register: every judgement that is ours rather than a
@@ -28,8 +39,8 @@
      what the model does. */
   #asmbtn { margin-top:10px; width:100%; padding:6px 8px; font:inherit;
             font-size:12px; cursor:pointer; border:1px solid var(--line, #cbd5e1);
-            border-radius:4px; background:#f8fafc; }
-  #asmbtn:hover { background:#eef2f7; }
+            border-radius:4px; background:var(--brand); color:#fff; border-color:var(--brand); }
+  #asmbtn:hover { background:var(--brand-2); }
   #asmwrap[hidden] { display:none; }
   #asmwrap { position:absolute; inset:0; background:rgba(15,23,42,.55);
              z-index:9; display:flex; align-items:center; justify-content:center; }
@@ -56,12 +67,13 @@
   details.lgroup[open] > summary::before { transform:rotate(90deg); }
   details.lgroup > summary:hover { color:#0f172a; }
   .lgbody { padding:0 0 5px 10px; }
-  .hold { background:#334155; color:#f1f5f9; font-size:12px; padding:6px 16px; }
+  .hold b { color:var(--apricot); }
+  .hold { background:var(--brand); color:#EEF0F2; font-size:12px; padding:6px 16px; }
   .ctl { font-size:12px; color:var(--muted); min-width:290px; }
   .ctl label { display:inline-flex; gap:4px; align-items:center; margin-right:8px; }
-  .ctl input { accent-color:#b91c1c; margin:0; }
-  .ctl input[type=range] { width:280px; accent-color:#b91c1c; }
-  .ctl output { color:#b91c1c; font-weight:700; font-variant-numeric:tabular-nums; }
+  .ctl input { accent-color:var(--brand); margin:0; }
+  .ctl input[type=range] { width:280px; accent-color:var(--brand); }
+  .ctl output { color:var(--brand); font-weight:700; font-variant-numeric:tabular-nums; }
   .ctl .off { opacity:.4; }
   #map { width:100%; height:100%; }
   .panel { position:absolute; top:12px; left:12px; z-index:3; width:255px; background:var(--panel);
@@ -69,7 +81,7 @@
            max-height:calc(100% - 48px); overflow:auto; box-shadow:0 1px 4px rgba(0,0,0,.12); }
   .panel h2 { margin:0 0 6px; font-size:12px; text-transform:uppercase; letter-spacing:.06em; color:var(--muted); }
   .row { display:flex; align-items:center; gap:7px; padding:2.5px 0; }
-  .row input { margin:0; accent-color:#b91c1c; }
+  .row input { margin:0; accent-color:var(--brand); }
   .swatch { width:22px; height:0; border-top:4px solid; flex:none; }
   .swatch.thin { border-top-width:3px; }
   .swatch.dashed { border-top-style:dashed; }
@@ -79,8 +91,8 @@
   .displayctl { margin-top:9px; border-top:1px solid var(--rule); padding-top:8px;
                 color:var(--muted); font-size:12px; }
   .displayctl label { display:block; }
-  .displayctl output { color:#b91c1c; font-weight:700; font-variant-numeric:tabular-nums; }
-  .displayctl input[type=range] { width:100%; accent-color:#b91c1c; }
+  .displayctl output { color:var(--brand); font-weight:700; font-variant-numeric:tabular-nums; }
+  .displayctl input[type=range] { width:100%; accent-color:var(--brand); }
   .stylekey { margin-top:8px; color:var(--muted); line-height:1.5;
               border-top:1px solid var(--rule); padding-top:7px; }
   .stylekey > summary { cursor:pointer; font-weight:600; font-size:12px; color:var(--ink); }
@@ -97,6 +109,7 @@
             padding:7px 12px; font-size:12.5px; max-width:min(760px, 92%);
             box-shadow:0 1px 6px rgba(0,0,0,.18); }
   #whybar button { margin-left:10px; font-size:11px; cursor:pointer; }
+  :is(a,button,input,select,textarea):focus-visible { outline:2px solid var(--teal); outline-offset:1px; }
 </style>
 </head>
 <body>
@@ -113,9 +126,11 @@
     <h1>European Grid N-1 Stress Screen <span style="color:var(--muted);font-weight:400">v4.5</span></h1>
     <div class="subtitle">
       Worst single-contingency post-fault loading per GW of TYNDP-2026-shaped transfer, on the open
-      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Screen scope:
-      <b>&ge;220&nbsp;kV, 50&nbsp;Hz AC</b> per synchronous area — the grey linework beneath is the
-      full 50–750&nbsp;kV dataset, context only. Headroom is <b>per GW and scale-free</b> (not
+      v23 OSM-derived topology (&copy; OpenStreetMap contributors, ODbL 1.0). Monitored to
+      <b>60&nbsp;kV</b>, 50&nbsp;Hz AC per synchronous area; contingencies on &ge;220&nbsp;kV plus
+      transformers, one circuit at a time; results reported in two voltage tiers, never pooled, and
+      coloured only where <b>|OTDF|&nbsp;&ge;&nbsp;0.02</b> — the screening cutoff PSS/E and
+      PowerFactory apply. The grey linework beneath is the full 50–750&nbsp;kV dataset, context only. Headroom is <b>per GW and scale-free</b> (not
       NTC/boundary capability — see Method &amp; limits): moving the year changes the transfer shape
       and — with plans on — the network itself. The "plan effect" view colors what the published
       plans change.
@@ -188,15 +203,14 @@
         absorbs before the first post-fault thermal limit. There is no dispatch base case — a corridor
         loaded in every credible market hour shows the same headroom as an idle one. Not NTC, TTC or
         boundary capability.</p>
-        <p><b>N-1 of what.</b> Single outage of each modelled AC branch (line record or ≥220 kV
-        transformer) within its synchronous area. No generator or busbar contingencies.
-        <b>Multi-circuit corridors are collapsed into one record</b> carrying the SUM of the
-        circuits&rsquo; ratings and their parallel reactance — 27.8% of in-scope spans (20,360 of
-        73,234) have two or more circuits. Outaging one such record therefore removes every circuit
-        on the corridor at once: that is a common-tower double-circuit contingency, and it is more
-        severe than a single-circuit N-1, not less. An earlier version of this note claimed the
-        opposite; treat multi-circuit corridors as pessimistic on the outage and optimistic on the
-        intact rating, and check n_circuits before quoting either.</p>
+        <p><b>N-1 of what.</b> Single outage of each modelled AC circuit (or ≥220 kV transformer)
+        within its synchronous area, <b>one circuit at a time</b>: a corridor carrying n circuits is
+        modelled as n parallel branches of rating/n and impedance ×n (23,753 corridors expanded into
+        50,216 circuits), which leaves each corridor's aggregate rating and admittance unchanged and
+        makes the results genuinely N-1. No generator or busbar contingencies. <b>Common-tower
+        double-circuit events are NOT taken</b> — where two circuits share towers, the screen is
+        optimistic against that event. Two earlier versions of this note described a collapsed
+        model whose corridor outage was a common-structure (P7) event; that model is retired.</p>
         <p><b>Two stress mechanisms, reported separately.</b> Bulk transfer stress (cross-border,
         internal and offshore-landing shapes) is what boundary reinforcement addresses. DC converter
         swing is a local phenomenon, and per GW an injection at one converter bus in a weak network
@@ -221,8 +235,11 @@
         <p><b>Envelope colors.</b> Each branch shows its own worst case over all shaped transfer
         directions and all outages — neighbouring reds need not bind together. Click for the binding
         pair.</p>
-        <p><b>Scope.</b> ≥220 kV, 50 Hz AC per synchronous area. The grey linework beneath is the full
-        50–750 kV dataset, context only — unscreened. The "with plans" network contains national and
+        <p><b>Scope.</b> Monitored to 60 kV, 50 Hz AC per synchronous area, so every country's
+        sub-transmission tier is inside the floor (France's 63 kV, Portugal's and Denmark's 60 kV
+        included). Contingencies are taken on ≥220 kV branches and all transformers, one circuit at
+        a time — a corridor of n circuits is n branches, so results are genuinely N-1. The grey
+        linework beneath is the full 50–750 kV dataset, context only — unscreened. The "with plans" network contains national and
         TSO development-plan circuits <i>and</i> ENTSO-E TYNDP&nbsp;2026 AC transmission projects at
         their published commissioning years, so the plan case reflects both national and
         pan-European build. TYNDP DC projects are not branches — DC enters as converter-swing
@@ -247,16 +264,14 @@
         <p><b>Ratings.</b> DC MW flow vs static typed continuous MVA rating (pf ≈ 1); no seasonal or
         short-term post-fault emergency ratings — conservative vs operational practice.</p>
         <p><b>What has been validated, and what has not.</b> Great Britain only, against NESO's
-        published material. <i>Direction</i>: of our 50 most transfer-stressed meshed corridors,
-        92% fall within 10&nbsp;km of a NESO "Beyond 2030" reinforcement corridor, against a 72.7%
-        random baseline (permutation p&nbsp;=&nbsp;0.0005). <i>Magnitude</i>: across 138 routes
-        matched to ETYS&nbsp;2025 Appendix&nbsp;B, per-circuit reactance tracks the published values
-        (Spearman 0.754, median ratio 0.895), and our three most-stressed boundaries — B6, B7a, B8 —
-        are exactly NESO's three largest published 2030 capability shortfalls. Boundary <i>ranking</i>
-        correlation is weaker (Spearman 0.419 over 17 boundaries, p&nbsp;=&nbsp;0.09) — treat the
-        boundary order as indicative, not as a ranking to quote. <b>No continental cross-check has
-        been done</b>: outside GB, direction and magnitude are unvalidated, and the further from a
-        meshed 400&nbsp;kV core you go the less the screening assumptions hold.</p>
+        published material, and the verdict is <b>re-computed on every build and reported
+        verbatim</b> in the banner above and in <code>stress_manifest.json</code> — this panel
+        deliberately quotes no figures, because two earlier versions carried numbers from
+        superseded builds. Read the banner: when a gate does not pass, the map says so and the
+        affected claim (currently corridor <i>ranking</i>) must not be quoted.
+        <b>No continental cross-check has been done</b>: outside GB, direction and magnitude are
+        unvalidated, and the further from a meshed 400&nbsp;kV core you go the less the screening
+        assumptions hold.</p>
       </div>
     </details>
   </div>
@@ -538,24 +553,25 @@ function ensureScenarioSource(scen) {
 // assert PASS from a hardcoded string; it now reports what the gates actually
 // returned, and anything other than PASS is said up front.
 function gateNotice(status) {
+  window.__gateStatus = status;   // so tierNotice can re-render, not erase, it
   if (!status || /direction PASS/.test(status)) return;
   const bar = document.getElementById("holdbar");
   if (!bar) return;
   if (!bar.dataset.orig) bar.dataset.orig = bar.innerHTML;
-  bar.style.background = "#7c2d12";
-  bar.innerHTML = "<b>Validation: the GB direction gate did NOT pass on this "
-    + "build.</b> The spatial signal is strong \u2014 top-stressed corridors fall "
-    + "in NESO's reinforcement corridors 86% of the time against 61.9% at "
-    + "random, p=0.0005 \u2014 but our top boundary set overlaps NESO's "
-    + "published set by 44.4% against a 50% threshold, so corridor RANKING is "
-    + "unvalidated. Do not quote one corridor as more stressed than another.";
+  bar.style.background = "#29194F"; bar.style.borderBottom = "3px solid #E8590C";
+  // No hardcoded figures: an earlier version quoted numbers from a superseded
+  // build. The manifest's own sentence IS the verdict for this build.
+  const brief = String(status).split("DIRECTION GATE")[0].replace(/^screening-grade\.\s*/, "");
+  bar.innerHTML = "<b>Validation: a gate did NOT pass on this build \u2014 "
+    + "corridor ranking is unvalidated.</b> Verbatim from the gates: "
+    + brief.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
 }
 
 function scenarioUnavailable(scen) {
   const bar = document.getElementById("holdbar");
   if (!bar || bar.dataset.err === scen) return;
   bar.dataset.err = scen;
-  bar.style.background = "#7c2d12";
+  bar.style.background = "#29194F"; bar.style.borderBottom = "3px solid #E8590C";
   bar.innerHTML = `<b>${SCEN_LABEL[scen] || scen} is unavailable.</b> Its tile archive ` +
     `(stress_v4_${scen}.pmtiles) did not load, so the map is not showing that scenario. ` +
     `Nothing below is ${SCEN_LABEL[scen] || scen} data — pick another scenario or report this.`;
@@ -906,8 +922,9 @@ function renderStressLegend() {
     note.innerHTML = "Dashed planned lines: colored by the headroom they arrive with " +
       "(absolute scale).<br>A branch that loses headroom but still lands above " +
       "12&nbsp;GW shows as unchanged: new circuits redistribute flow onto parallel " +
-      "paths, so a lightly-used circuit taking up work is not a problem. In GB at 2035, " +
-      "189 branches lose headroom and none of them land under 3&nbsp;GW.";
+      "paths, so a lightly-used circuit taking up work is not a problem. Losing " +
+      "headroom only matters where a branch lands LOW \u2014 the red band below flags " +
+      "exactly those.";
     legend.appendChild(note);
   }
 }
@@ -918,15 +935,22 @@ function tierNotice() {
   const bar = document.getElementById("holdbar");
   if (!bar) return;
   if (!bar.dataset.orig) bar.dataset.orig = bar.innerHTML;
-  if (state.tier === "t") { bar.style.background = ""; bar.innerHTML = bar.dataset.orig; return; }
-  bar.style.background = "#7c2d12";
+  if (state.tier === "t") {
+    // restoring the disclaimer must not erase a live gate warning - one
+    // round-trip through the tier radios used to dismiss it permanently
+    bar.style.background = ""; bar.style.borderBottom = "";
+    bar.innerHTML = bar.dataset.orig;
+    if (window.__gateStatus) gateNotice(window.__gateStatus);
+    return;
+  }
+  bar.style.background = "#29194F"; bar.style.borderBottom = "3px solid #E8590C";
   bar.innerHTML = state.tier === "d"
     ? "<b>Sub-transmission tier \u2014 compare within a country, never between them.</b> "
-    + "The floor now reaches 60 kV so every country's sub-transmission tier is present, but coverage still differs: OpenStreetMap has far more of Germany's "
-    + "110 kV and GB's 132 kV distribution tiers but excludes France's 63 kV, Portugal's "
-    + "60 kV and Denmark's 60 kV. A country's position here largely reflects how much of "
-    + "its sub-transmission is in OpenStreetMap at all \u2014 France shows only 44 exposed "
-    + "branches against Germany's 550."
+    + "Every country's own tier is inside the 60 kV floor, but how much of it OpenStreetMap "
+    + "holds still differs by country, so cross-border comparison compares mapping coverage "
+    + "as much as constraint. Some systems also show little here for honest reasons "
+    + "\u2014 a country's entire monitored sub-transmission can sit below the 0.02 "
+    + "sensitivity cutoff for every tested transfer (Portugal does): screened, not exposed."
     : "<b>Both tiers shown together.</b> Transmission and sub-transmission are not "
     + "comparable with each other, and the sub-transmission tier is not comparable "
     + "between countries. Read this view for interaction, not for ranking.";
