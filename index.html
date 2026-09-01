@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=e69d6b84e1"></script>
-<script src="feedback.js?v=e69d6b84e1"></script>
+<script src="permalink.js?v=90e63f8716"></script>
+<script src="feedback.js?v=90e63f8716"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
@@ -153,7 +153,8 @@
       <span title="Which stress mechanism the colours show. Bulk transfer is what boundary reinforcement addresses; DC swing is the local loss/swing of a converter infeed. Worst of both is the conservative envelope.">stress:</span>
       <label><input type="radio" name="mech" value="env" checked> worst of both</label>
       <label><input type="radio" name="mech" value="t"> bulk transfer</label>
-      <label><input type="radio" name="mech" value="c"> DC swing</label><br>
+      <label><input type="radio" name="mech" value="c"> DC swing</label>
+      <label title="Sensitivity, not the default: headroom if the single most helpful HVDC link is redispatched to full rating at each branch's binding case. Single link, binding case only; a link never relieves its own swing."><input type="radio" name="mech" value="r"> with DC redispatch</label><br>
       network: <label><input type="radio" name="tier" value="t" checked> transmission &ge;220 kV</label>
       <label><input type="radio" name="tier" value="d"> sub-transmission 60&ndash;219 kV</label>
       <label><input type="radio" name="tier" value="all"> both</label>
@@ -335,7 +336,7 @@ function horizonFor(year, scen) {
   return best;
 }
 const sfx = (st) => `${state.scen}_${horizonFor(state.year, state.scen)}_${st}`;
-const MECH_PREFIX = { env: "h", t: "ht", c: "hc" };
+const MECH_PREFIX = { env: "h", t: "ht", c: "hc", r: "hr" };
 const hField = (st) => `${MECH_PREFIX[state.mech]}_${sfx(st)}`;
 const uField = (st) => `u_${sfx(st)}`;
 
@@ -905,6 +906,7 @@ function renderStressLegend() {
   legend.innerHTML = "";
   const set = state.st === "delta" ? DELTA_CLASSES : CLASSES;
   const mechLabel = { env: "worst of bulk transfer and DC swing",
+                      r: "envelope with single-link DC redispatch (sensitivity)",
                       t: "bulk transfer only",
                       c: "DC converter swing only" }[state.mech];
   document.getElementById("legend-title").textContent = state.st === "delta"
