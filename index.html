@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=4ccf96bf"></script>
-<script src="feedback.js?v=4ccf96bf"></script>
+<script src="permalink.js?v=fe5176e717"></script>
+<script src="feedback.js?v=fe5176e717"></script>
 <style>
   :root { --paper:#f5f7f6; --ink:#172026; --muted:#59666c; --rule:#c9d1cf; --panel:rgba(245,247,246,.97); }
   * { box-sizing:border-box; }
@@ -404,9 +404,17 @@ function exposed(st) {
 }
 function reportedSet() {
   const band = TIER_BAND[state.tier] || TIER_BAND.t;
-  const kv = ["coalesce", ["get", "voltage_kv"], 0];
+  const kv = ["get", "voltage_kv"];
+  // A branch whose voltage is unknown belongs in the transmission tier, not
+  // nowhere. Coalescing the null to 0 dropped it out of every band, which
+  // silently removed half the planned branches from "with plans" - dropping a
+  // branch for a missing ATTRIBUTE is a worse error than showing it in the
+  // most likely tier and saying the voltage is unknown.
+  const inBand = ["all", [">=", ["coalesce", kv, 0], band[0]],
+                         ["<=", ["coalesce", kv, 0], band[1]]];
+  const unknownKv = ["!", ["has", "voltage_kv"]];
   return [["!=", ["get", "bridge"], true],
-          [">=", kv, band[0]], ["<=", kv, band[1]]];
+          state.tier === "d" ? inBand : ["any", inBand, unknownKv]];
 }
 
 function stressFilter(kind) {
