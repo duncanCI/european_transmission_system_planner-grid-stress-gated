@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=7e0611cf60"></script>
-<script src="feedback.js?v=7e0611cf60"></script>
+<script src="permalink.js?v=ca7c3b8362"></script>
+<script src="feedback.js?v=ca7c3b8362"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
@@ -193,7 +193,7 @@
       <div class="k"><span style="border-top:3px dashed #7c3aed"></span><span><b>Dashed violet</b> — planned scheme from a public development plan, schematic — <b>not a route</b></span></div>
       <div class="k"><span style="border-top:3px dashed #06b6d4"></span><span><b>Dashed cyan</b> — ENTSO-E TYNDP 2026 project</span></div>
       <div class="k"><span style="border-top:2px dotted #9ca3af"></span><span><b>Dotted grey</b> — connection radial (bridge): its outage islands the network, so it is flagged, not scored</span></div>
-      <div class="k"><span style="border-top:2px solid #7f9bb0"></span><span><b>Thin blue-grey</b> &mdash; screened and found NOT meaningfully exposed: the distribution factor for every tested transfer is below 0.02, the cutoff PSS/E and PowerFactory apply before reporting. Assessed, not constrained.</span></div>
+      <div class="k"><span style="border-top:2px solid #7f9bb0"></span><span><b>Thin blue-grey</b> &mdash; screened and found NOT meaningfully exposed: the distribution factor for every tested transfer is below 0.02, the cutoff PSS/E and PowerFactory apply before reporting. Assessed, not constrained. Drawn only for circuits in the network at the selected year and in the selected tier; dashed when the circuit is not yet in service.</span></div>
       <div class="k"><span style="border-top:2px solid #c3cbd1"></span><span><b>Thin pale grey</b> — the full 50-750 kV dataset drawn for context. These carry NO headroom colour because they were never screened: the screen takes contingencies on &ge;220 kV. Grey here means "not assessed", never "fine".</span></div>
       <div style="margin-top:5px">Click any branch for its binding contingency and driving transfer.</div>
     </details>
@@ -429,13 +429,20 @@ function reportedSet() {
   const inBand = ["all", [">=", ["coalesce", kv, 0], band[0]],
                          ["<=", ["coalesce", kv, 0], band[1]]];
   const unknownKv = ["!", ["has", "voltage_kv"]];
-  return [["!=", ["get", "bridge"], true],
+  return [["!=", bridgeExpr(), true],
           state.tier === "d" ? inBand : ["any", inBand, unknownKv]];
 }
 
 function stressFilter(kind) {
-  const base = ["all", ["==", ["get", "kind"], kind], ...reportedSet(),
-                exposed(state.st === "delta" ? "p" : state.st)];
+  // Plan effect on an existing circuit: exposed in EITHER state. Testing the
+  // planned state alone dropped the best relief there is - a circuit the
+  // plans take from exposed to below the cutoff has, by construction, a
+  // small u_p, and so it vanished from the one view whose purpose is to show
+  // that relief (122 circuits at 2040, every one relieved by 5 GW or more).
+  const expo = (state.st === "delta" && kind === "line")
+    ? ["any", exposed("e"), exposed("p")]
+    : exposed(state.st === "delta" ? "p" : state.st);
+  const base = ["all", ["==", ["get", "kind"], kind], ...reportedSet(), expo];
   if (state.st === "delta" && kind === "line") {
     // require both states present AND below the 999-GW headroom cap, so cap
     // artifacts never masquerade as plan effects; and gate on PRACTICAL
@@ -453,6 +460,47 @@ function stressFilter(kind) {
     base.push(["has", hField(state.st)]);
   }
   return base;
+}
+
+// The state whose u_/h_ fields say what is IN the network for the current
+// mode: the planned state in the plan-effect and with-plans views, the
+// existing state otherwise.
+const activeState = () => (state.st === "delta" ? "p" : state.st);
+// Screened-but-unexposed branches, drawn thin blue-grey. Three things this
+// filter has to say that it did not:
+//   * ["has", u_]: the branch must be IN the network at this horizon. A
+//     planned circuit commissioned in 2036 has no u_..._2030_p; coalescing
+//     that to 0 made it "not exposed", and 975 not-yet-built circuits were
+//     drawn at the 2030 default as "assessed, not constrained" - solid, so
+//     indistinguishable from an existing line. From the reader's side that
+//     is what "planned lines show no loading" looked like.
+//   * reportedSet(): the same tier as the coloured layer. Sub-transmission
+//     circuits were drawn here in the transmission tier when comfortable and
+//     hidden when constrained, so the other tier appeared only when fine.
+//   * one layer per kind, so a planned circuit stays dashed here too: the
+//     style key promises "dashed = not yet in service" for every planned
+//     circuit, and this layer broke that promise.
+function unexposedFilter(kind) {
+  const st = activeState();
+  return ["all", ["==", ["get", "kind"], kind], ...reportedSet(),
+          ["has", uField(st)], ["!", exposed(st)]];
+}
+// Islanding is topological, so it has one value for the existing network and
+// one per horizon for the planned one: a dead-end stub stops being a bridge
+// the year a planned circuit lands on it, and from then on it carries real
+// post-fault flow (53 such >=220 kV stubs at 2040, headroom down to 3.3 GW).
+// Read the flag for the state being shown; `bridge` is the fallback for tiles
+// built before the per-state fields existed.
+function bridgeExpr() {
+  const st = activeState();
+  const f = st === "e" ? "bridge_e" : `bridge_p_${horizonFor(state.year, state.scen)}`;
+  return ["coalesce", ["get", f], ["get", "bridge"]];
+}
+// The bridges layer is per horizon too: a planned radial is not a bridge
+// before it exists, so it is drawn only once it is in the network of the
+// selected year.
+function bridgeFilter() {
+  return ["all", ["==", bridgeExpr(), true], ["has", uField(activeState())]];
 }
 
 // ---- context (mirrored from the public map) ----
@@ -582,15 +630,16 @@ function scenarioUnavailable(scen) {
 // layers are rebuilt when the scenario changes. They must stay UNDER the
 // context and project layers, hence beforeId.
 const STRESS_SPECS = [
-  { id: "bridges", filter: () => ["all", ["==", ["get", "bridge"], true]],
+  { id: "bridges", filter: () => bridgeFilter(),
     paint: () => ({ "line-color": "#9ca3af", "line-dasharray": [0.8, 1.6],
                     "line-width": 1.0 * state.lineScale, "line-opacity": 0.6 }) },
-  { id: "stress_unexposed",
-    filter: () => ["all", ["in", ["get", "kind"], ["literal", ["line", "planned_line"]]],
-                   ["!=", ["get", "bridge"], true],
-                   ["!", exposed(state.st === "delta" ? "p" : state.st)]],
+  { id: "stress_unexposed", filter: () => unexposedFilter("line"),
     paint: () => ({ "line-color": "#7f9bb0", "line-opacity": 0.4,
                     "line-width": 0.6 * state.lineScale }) },
+  { id: "stress_unexposed_planned", filter: () => unexposedFilter("planned_line"),
+    paint: () => ({ "line-color": "#7f9bb0", "line-opacity": 0.55,
+                    "line-dasharray": [2.2, 1.6],
+                    "line-width": 0.8 * state.lineScale }) },
   { id: "stress_existing", filter: () => stressFilter("line"),
     paint: () => ({ "line-color": colorExpr("line"), "line-width": widthExpr("line") }) },
   { id: "stress_planned", filter: () => stressFilter("planned_line"),
@@ -974,14 +1023,15 @@ function refresh() {
     map.setPaintProperty(`stress_planned__${band}`, "line-width", widthExpr("planned"));
     map.setFilter(`stress_existing__${band}`, stressFilter("line"));
     map.setFilter(`stress_planned__${band}`, stressFilter("planned_line"));
-    map.setFilter(`stress_unexposed__${band}`,
-      ["all", ["in", ["get", "kind"], ["literal", ["line", "planned_line"]]],
-       ["!=", ["get", "bridge"], true],
-       ["!", exposed(state.st === "delta" ? "p" : state.st)]]);
+    map.setFilter(`stress_unexposed__${band}`, unexposedFilter("line"));
+    map.setFilter(`stress_unexposed_planned__${band}`, unexposedFilter("planned_line"));
+    map.setFilter(`bridges__${band}`, bridgeFilter());
   }
   for (const band of BANDS) {
-    map.setLayoutProperty(`stress_planned__${band}`, "visibility",
-      state.st === "e" ? "none" : "visible");
+    for (const id of ["stress_planned", "stress_unexposed_planned"]) {
+      map.setLayoutProperty(`${id}__${band}`, "visibility",
+        state.st === "e" ? "none" : "visible");
+    }
   }
   for (const [id, kind] of [["proj_lines", "dated"], ["proj_points", "dated"]]) {
     if (!map.getLayer(id)) continue;

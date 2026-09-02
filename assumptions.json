@@ -144,7 +144,7 @@
   {
    "id": "endpoint-name-matching",
    "topic": "Endpoints",
-   "assumption": "Endpoint names are matched after stripping commentary, page references and station-type words in each language.",
+   "assumption": "Endpoint names are matched after stripping commentary, page references and station-type words in each language; an endpoint cell is also tried segment by segment (via-clauses cut, dash- and slash-separated alternatives, its own '(DE)'-style country hint), and a border crossing named as an endpoint is classed as a border point, not a failed station match.",
    "basis": "Plans write endpoints as prose: \"Vohringen (DE) - the system boundary is at the border\" is the station Vohringen, and \"UW Westtirol\" and \"Umspannwerk Westtirol\" are one place written two ways.",
    "bias": "Over-stripping could match the wrong station. Matching stays on a high fuzzy threshold with a margin over the runner-up."
   },
@@ -160,14 +160,21 @@
    "topic": "DC",
    "assumption": "A DC link of 500 MW or more enters as a 1 GW converter-injection pattern, not a flow-carrying branch.",
    "basis": "Per GW the AC-flow consequence of a schedule swing and of a full-import outage is the same linear pattern.",
-   "bias": "Conservative where embedded HVDC parallels AC: the link provides no relief in this model."
+   "bias": "Conservative where embedded HVDC parallels AC: the link provides no relief in the default columns. The 'with DC redispatch' view is the labelled exception below."
+  },
+  {
+   "id": "dc-redispatch-sensitivity",
+   "topic": "DC",
+   "assumption": "The 'with DC redispatch' view raises a branch's headroom by the single most helpful HVDC link redispatched to its full rating at that branch's binding case.",
+   "basis": "HVDC setpoints are controllable within post-fault timescales, and relieving paralleled AC corridors is a stated purpose of the planned links. The link's converter pattern response is the same physics the swing screen already computes.",
+   "bias": "Optimistic per branch, in three stated ways: one link per branch but every branch assumes ITS best link (no shared dispatch), relief is evaluated at the unrelieved binding case only (a nearly-as-severe second case with no DC leverage narrows the true gain), and full rating assumes no concurrent market schedule. The default view keeps the no-relief limit."
   },
   {
    "id": "renewal-excluded-elsewhere",
    "topic": "Register",
    "assumption": "Refurbishments, uprates and series devices are not added as new circuits.",
    "basis": "Adding them created phantom parallel corridors. Note that 'reinforcement' is NOT filtered: in TSO usage a named reinforcement is new build.",
-   "bias": "Uprates that do add capacity are not credited outside France."
+   "bias": "A refurbishment or uprating scheme now credits its single most probable existing span with the same x1.3 conductor uplift as an RTE renewal (one scheme, one span, never twice, across sources). Series devices remain uncredited: their benefit is dispatch-dependent, which this screen does not model."
   }
  ]
 }
