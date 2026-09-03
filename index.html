@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=fb74ef2fc6"></script>
-<script src="feedback.js?v=fb74ef2fc6"></script>
+<script src="permalink.js?v=97f0a521e4"></script>
+<script src="feedback.js?v=97f0a521e4"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
@@ -138,7 +138,7 @@
   </div>
   <div class="ctl">
     <label for="yearslider" style="display:block">Development year <output id="yearout">2030</output>
-      <span id="horizonout" style="margin-left:8px" title="Stress and scenario figures exist at 2030 (NT+ only), 2035 and 2040; the slider snaps to the nearest">· horizon 2030</span></label>
+      <span id="horizonout" style="margin-left:8px" title="Stress and scenario figures exist at 2030 (NT+ only), 2035 and 2040; the slider snaps UP to the first horizon at or after its year, the first screen that contains everything online by then">· horizon 2030</span></label>
     <input id="yearslider" type="range" min="2025" max="2040" step="1" value="2030">
     <div style="margin-top:2px">
       <label title="National Trends+ — ENTSO-E/ENTSOG TYNDP 2026 central policy scenario"><input type="radio" name="scen" value="ntp" checked> NT+</label>
@@ -190,8 +190,8 @@
       <div class="k"><span style="border-top:4px dashed #b91c1c"></span><span><b>Dashed</b>, headroom colour — a circuit that is <b>not yet in service</b>, coloured by the headroom it arrives with. That covers both a scheme from a development plan and one already tagged under construction in OpenStreetMap: neither is carrying power today, so neither is drawn solid.</span></div>
       <div class="k"><span style="border-top:3px solid #0e7490"></span><span><b>Solid teal</b> — existing DC link, screened as a converter-swing pattern, not a flow-carrying branch</span></div>
       <div class="k"><span style="border-top:3px dashed #0e7490"></span><span><b>Dashed teal</b> — planned DC / interconnector project, context only</span></div>
-      <div class="k"><span style="border-top:3px dashed #7c3aed"></span><span><b>Dashed violet</b> — planned scheme from a public development plan, schematic — <b>not a route</b></span></div>
-      <div class="k"><span style="border-top:3px dashed #06b6d4"></span><span><b>Dashed cyan</b> — ENTSO-E TYNDP 2026 project</span></div>
+      <div class="k"><span style="border-top:3px dashed #7c3aed"></span><span><b>Dashed violet</b> — planned scheme from a public development plan that the screen does <b>not</b> model (no register match, DC, refurbishment, below the floor); schematic, <b>not a route</b>. A scheme the screen models is drawn over it in its headroom colour from its service year.</span></div>
+      <div class="k"><span style="border-top:3px dashed #06b6d4"></span><span><b>Dashed cyan</b> — ENTSO-E TYNDP 2026 project the screen does not model (DC, storage); modelled AC projects take their headroom colour on top</span></div>
       <div class="k"><span style="border-top:2px dotted #9ca3af"></span><span><b>Dotted grey</b> — connection radial (bridge): its outage islands the network, so it is flagged, not scored</span></div>
       <div class="k"><span style="border-top:2px solid #7f9bb0"></span><span><b>Thin blue-grey</b> &mdash; screened and found NOT meaningfully exposed: the distribution factor for every tested transfer is below 0.02, the cutoff PSS/E and PowerFactory apply before reporting. Assessed, not constrained. Drawn only for circuits in the network at the selected year and in the selected tier; dashed when the circuit is not yet in service.</span></div>
       <div class="k"><span style="border-top:2px solid #c3cbd1"></span><span><b>Thin pale grey</b> — the full 50-750 kV dataset drawn for context. These carry NO headroom colour because they were never screened: the screen takes contingencies on &ge;220 kV. Grey here means "not assessed", never "fine".</span></div>
@@ -329,11 +329,17 @@ map.addControl(new maplibregl.AttributionControl({
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "top-right");
 new ResizeObserver(() => map.resize()).observe(document.getElementById("map"));
 
+// The slider snaps UP to the first screened horizon at or after its year, not
+// to the nearest. A planned circuit dated 2032 exists in the 2035 network and
+// not in the 2030 one; snapping 2032 to 2030 showed a network without it while
+// the context layer drew it in violet from 2032, so the reader saw the context
+// colour and never the constraint. Snapping up gives the first screen that
+// contains everything online by the slider year (and, until that year is
+// reached, some that are not yet - the planned layers gate those by their own
+// service year below).
 function horizonFor(year, scen) {
   const hs = HORIZONS[scen];
-  let best = hs[0];
-  for (const h of hs) if (Math.abs(h - year) < Math.abs(best - year)) best = h;
-  return best;
+  return hs.find(h => h >= year) ?? hs[hs.length - 1];
 }
 const sfx = (st) => `${state.scen}_${horizonFor(state.year, state.scen)}_${st}`;
 const MECH_PREFIX = { env: "h", t: "ht", c: "hc", r: "hr" };
@@ -348,14 +354,20 @@ function absColorExpr(st) {
   expr.push(CLASSES[CLASSES.length - 1].color);
   return expr;
 }
-function absWidthExpr(st) {
+// `base` is the width at zero loading per zoom stop. Planned circuits use a
+// wider base than existing ones: a screened planned circuit shares its
+// geometry with the violet/teal context line of the same scheme drawn
+// beneath it, and must cover it fully or the context colour peeks out along
+// the edges and reads as the line's colour.
+function absWidthExpr(st, base = [0.8, 1.4, 2.2]) {
   const k = state.lineScale;
   const u = ["min", 0.4, ["coalesce", ["get", uField(st)], 0]];
   return ["interpolate", ["linear"], ["zoom"],
-          4, ["*", k, ["+", 0.8, ["*", 9, u]]],
-          8, ["*", k, ["+", 1.4, ["*", 16, u]]],
-          11, ["*", k, ["+", 2.2, ["*", 24, u]]]];
+          4, ["*", k, ["+", base[0], ["*", 9, u]]],
+          8, ["*", k, ["+", base[1], ["*", 16, u]]],
+          11, ["*", k, ["+", base[2], ["*", 24, u]]]];
 }
+const PLANNED_BASE = [1.5, 2.4, 3.8];
 // In "plan effect" mode, existing lines color by the CHANGE plans make, while
 // planned lines color by the headroom they ARRIVE with (they have no baseline).
 function colorExpr(layerKind) {
@@ -378,8 +390,8 @@ function colorExpr(layerKind) {
   return absColorExpr(state.st);
 }
 function widthExpr(layerKind) {
+  if (layerKind === "planned") return absWidthExpr(state.st === "delta" ? "p" : state.st, PLANNED_BASE);
   if (state.st === "delta") {
-    if (layerKind === "planned") return absWidthExpr("p");
     const d = ["abs", ["-", ["coalesce", ["get", hField("p")], 0],
                             ["coalesce", ["get", hField("e")], 0]]];
     const u = ["min", 0.5, ["*", 0.06, d]];
@@ -433,6 +445,14 @@ function reportedSet() {
           state.tier === "d" ? inBand : ["any", inBand, unknownKv]];
 }
 
+// A planned circuit is drawn only once it is online: promoter-stated service
+// year (carried in the tiles as `year`) at or before the slider. Circuits with
+// no year - OpenStreetMap under-construction spans - are in every planned
+// state and always drawn.
+function onlineByNow() {
+  return ["any", ["!", ["has", "year"]], ["<=", ["get", "year"], state.year]];
+}
+
 function stressFilter(kind) {
   // Plan effect on an existing circuit: exposed in EITHER state. Testing the
   // planned state alone dropped the best relief there is - a circuit the
@@ -459,6 +479,7 @@ function stressFilter(kind) {
   } else {
     base.push(["has", hField(state.st)]);
   }
+  if (kind === "planned_line") base.push(onlineByNow());
   return base;
 }
 
@@ -482,8 +503,10 @@ const activeState = () => (state.st === "delta" ? "p" : state.st);
 //     circuit, and this layer broke that promise.
 function unexposedFilter(kind) {
   const st = activeState();
-  return ["all", ["==", ["get", "kind"], kind], ...reportedSet(),
-          ["has", uField(st)], ["!", exposed(st)]];
+  const f = ["all", ["==", ["get", "kind"], kind], ...reportedSet(),
+             ["has", uField(st)], ["!", exposed(st)]];
+  if (kind === "planned_line") f.push(onlineByNow());
+  return f;
 }
 // Islanding is topological, so it has one value for the existing network and
 // one per horizon for the planned one: a dead-end stub stops being a bridge
@@ -500,7 +523,8 @@ function bridgeExpr() {
 // before it exists, so it is drawn only once it is in the network of the
 // selected year.
 function bridgeFilter() {
-  return ["all", ["==", bridgeExpr(), true], ["has", uField(activeState())]];
+  return ["all", ["==", bridgeExpr(), true], ["has", uField(activeState())],
+          ["any", ["!=", ["get", "kind"], "planned_line"], onlineByNow()]];
 }
 
 // ---- context (mirrored from the public map) ----
@@ -665,8 +689,11 @@ function stressLayerIds(prefixes) {
 function buildStressLayers() {
   ensureScenarioSource(state.scen);
   for (const id of stressLayerIds()) if (map.getLayer(id)) map.removeLayer(id);
-  const below = ["plant_poly_gen", "demand_places", "gen_plants", "tyndp_polys",
-                 "proj_lines"].find(id => map.getLayer(id));
+  // above every context LINE and area, below the context POINTS and circles;
+  // on the first build none of those exist yet and the layers go on top, the
+  // circles and points are then added above them
+  const below = ["demand_places", "gen_plants", "flex_batteries", "tyndp_points",
+                 "proj_points"].find(id => map.getLayer(id));
   for (const spec of STRESS_SPECS) {
     for (const band of BANDS) {
       map.addLayer({
@@ -773,6 +800,10 @@ async function setup() {
       filter: ["==", ["get", "group"], "battery"],
       paint: { "fill-color": "#db2777", "fill-opacity": 0.25,
                "fill-outline-color": "#db2777" } });
+  }
+  // (the scenario CIRCLES are added after the stress layers, below)
+  function addScenarioCircles() {
+    if (!TOTALS) return;
     map.addLayer({ id: "demand_places", type: "circle", source: "context",
       "source-layer": "places", minzoom: 4, layout: { visibility: "none" },
       paint: { "circle-color": "#0284c7", "circle-opacity": 0.25,
@@ -797,8 +828,12 @@ async function setup() {
                "circle-radius": circleRadius(genMWExpr(), 0.6) } });
   }
 
-  buildStressLayers();
-
+  // Context LINES and study areas go UNDER the stress layers: a scheme the
+  // screen models is drawn again on top in its headroom colour, so the violet
+  // and teal only remain visible for schemes the screen does not model (no
+  // register match, DC, refurbishment, below the floor) - which is exactly
+  // what "context colour" should mean here. Context POINTS stay above.
+  //
   // TYNDP rides the public context tileset's never-drop pass. As a plain
   // GeoJSON source MapLibre's own simplification silently discarded small
   // features at low zoom (284 features rendered as 4 at z3).
@@ -808,37 +843,37 @@ async function setup() {
   map.addLayer({ id: "tyndp_polys", type: "fill", source: "context",
     "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
-    layout: { visibility: "none" },
     paint: { "fill-color": "#6366f1", "fill-opacity": 0.14 } });
   map.addLayer({ id: "tyndp_poly_outline", type: "line", source: "context",
     "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "Polygon"], tyndpYearFilter()],
-    layout: { visibility: "none" },
     paint: { "line-color": "#6366f1", "line-width": 1.4, "line-opacity": 0.85 } });
   map.addLayer({ id: "tyndp_lines", type: "line", source: "context",
     "source-layer": "tyndp",
     filter: ["all", ["==", ["geometry-type"], "LineString"], tyndpYearFilter()],
-    layout: { visibility: "none" },
     paint: { "line-color": "#06b6d4", "line-dasharray": [4, 1.6],
              "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.6, 8, 2.6, 12, 4.0] } });
-  map.addLayer({ id: "tyndp_points", type: "circle", source: "context",
-    "source-layer": "tyndp",
-    filter: ["all", ["==", ["geometry-type"], "Point"], tyndpYearFilter()],
-    layout: { visibility: "none" },
-    paint: { "circle-color": "#06b6d4", "circle-opacity": 0.85,
-             "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 7],
-             "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
-
   const projColor = ["case", ["==", ["coalesce", ["get", "is_dc"], false], true],
                      "#0e7490", "#7c3aed"];
   map.addLayer({ id: "proj_lines", type: "line", source: "context", "source-layer": "projects",
     filter: ["all", ["==", ["geometry-type"], "LineString"], datedFilter("dated")],
-    layout: { visibility: "none" },
     paint: { "line-color": projColor, "line-dasharray": [2.4, 1.8],
              "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 2.0, 12, 3.4] } });
+
+  buildStressLayers();
+
+  // Circles and points sit ABOVE the stress layers so they stay clickable and
+  // legible; the stress layers are inserted beneath the first of them that
+  // exists when a scenario is rebuilt (see buildStressLayers).
+  addScenarioCircles();
+  map.addLayer({ id: "tyndp_points", type: "circle", source: "context",
+    "source-layer": "tyndp",
+    filter: ["all", ["==", ["geometry-type"], "Point"], tyndpYearFilter()],
+    paint: { "circle-color": "#06b6d4", "circle-opacity": 0.85,
+             "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 7],
+             "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
   map.addLayer({ id: "proj_points", type: "circle", source: "context", "source-layer": "projects",
     filter: ["all", ["==", ["geometry-type"], "Point"], datedFilter("dated")],
-    layout: { visibility: "none" },
     paint: { "circle-color": "#7c3aed", "circle-opacity": 0.85,
              "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 7],
              "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
@@ -912,16 +947,16 @@ function buildLegends() {
             "DC links (v23 dataset)", ["dc_links"], true,
             "HVDC links and interconnectors from the open v23 dataset. In the screen each >=500 MW link is a 1 GW converter-swing transfer pattern - covering schedule-swing and full-outage stress per GW - not a flow-carrying branch; no relief is modelled");
   legendRow(gNet, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
-            "Planned projects by year", ["proj_lines", "proj_points"], false,
-            "Public development plans; violet = shown by selected year");
-  const gTy = legendGroup(dev, "ENTSO-E TYNDP 2026 portfolio", false);
+            "Planned projects by year", ["proj_lines", "proj_points"], true,
+            "Public development plans, shown from their promoter-stated year. Violet means the screen does NOT model this scheme (no register match, DC, refurbishment, or below the floor); a scheme the screen models is drawn on top in its headroom colour");
+  const gTy = legendGroup(dev, "ENTSO-E TYNDP 2026 portfolio", true);
   legendRow(gTy, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
             "TYNDP 2026 lines &amp; storage (ENTSO-E)",
-            ["tyndp_lines", "tyndp_points"], false,
-            "ENTSO-E TYNDP 2026 draft portfolio (preliminary). \u00a9 ENTSO-E \u2014 not open data; contact ENTSO-E for reuse terms. Year-gated by the slider; transmission projects as dashed cyan lines, storage as dots; not represented in the flow model");
+            ["tyndp_lines", "tyndp_points"], true,
+            "ENTSO-E TYNDP 2026 draft portfolio (preliminary). \u00a9 ENTSO-E \u2014 not open data; contact ENTSO-E for reuse terms. Year-gated by the slider; teal means the screen does not model this element (DC, storage, no AC branch) - an AC project the screen models is drawn on top in its headroom colour");
   legendRow(gTy, `<span class="swatch dot" style="background:#6366f1;opacity:.35;border-radius:2px;width:22px;height:10px"></span>`,
             "TYNDP 2026 study corridors (areas)",
-            ["tyndp_polys", "tyndp_poly_outline"], false,
+            ["tyndp_polys", "tyndp_poly_outline"], true,
             "Translucent violet-blue FILLS are study corridors/areas from the TYNDP 2026 draft portfolio - broad zones under study, NOT routes and NOT lines; year-gated by the slider; not represented in the flow model");
   if (TOTALS) {
     const gScen = legendGroup(dev, "Demand, generation &amp; flexibility", false);
@@ -1197,6 +1232,8 @@ function wirePopups() {
       if (he != null && hp != null && he < 998 && hp < 998)
         rows.push(["plan effect", (hp - he >= 0 ? "+" : "") + (hp - he).toFixed(1) + " GW headroom"]);
       rows.push(["voltage", p.voltage_kv ? p.voltage_kv + " kV" : "planned (typed)"]);
+      if (p.kind === "planned_line")
+        rows.push(["in service from", p.year != null ? p.year + " (promoter-stated; coloured from the first screened horizon that contains it)" : "under construction per OpenStreetMap - in every planned state"]);
       if (p.origin) rows.push(["origin", p.origin]);
       if (p.endpoint) rows.push(["endpoint", p.endpoint]);
       rows.push(["evidence", "inferred: v23 typed parameters, scenario-shaped 1 GW transfer, N-1 by LODF"]);
