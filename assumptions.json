@@ -46,9 +46,9 @@
   {
    "id": "endpoint-voltage-level",
    "topic": "Planned endpoints",
-   "assumption": "A planned AC branch may not join two busbars whose nominal voltages differ by more than 10%. 380/400 and 420/400 kV are one system; 330/220 and 275/220 are not.",
-   "basis": "Such a branch shorts two nominal levels without the transformer that really couples them, and pypsa derives x_pu from bus0's v_nom alone, so identical ohms differ by (380/220)^2 = 3.0x depending which terminal sorted first. 336 planned branches were doing this.",
-   "bias": "Conservative: the pairing is dropped and the rating renormalised onto same-level candidates."
+   "assumption": "A planned circuit lands only on busbars at its own nominal level (within 10%: 380/400/420 kV are one system, 60/63/66 kV another; 330/220 and 275/220 are not). A named station that holds no busbar at that level is not an exact match, and the endpoint falls back to the nearest major terminal AT that level. Sources that publish no voltage (RTE) get theirs from the best-weighted terminals first, then the same rule.",
+   "basis": "A branch between two levels shorts them without the transformer that really couples them, and pypsa derives x_pu from the bus voltage, so identical ohms carry (400/110)^2 = 13x less flow between two 110 kV busbars than between two 400 kV ones. Once the candidate floor followed the monitoring floor to 60 kV, a soft preference for the right level was not enough: 62 register sub-branches at 220-750 kV were built between two 110/132/60 kV busbars and relieved nothing, 70% of Norway's 420 kV licensed sub-branches landed on 132 kV busbars, and 55 380/400 kV schemes whose named station holds only a 110 kV busbar were dropped outright.",
+   "bias": "A scheme with no same-level terminal within its search radius is unresolved rather than misplaced, which understates plan relief for that scheme; it is counted (exact_refused_wrong_level, unresolved_endpoint)."
   },
   {
    "id": "renewal-one-circuit",
