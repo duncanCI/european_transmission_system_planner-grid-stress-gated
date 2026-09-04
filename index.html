@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=3dc4af5fd6"></script>
-<script src="feedback.js?v=3dc4af5fd6"></script>
+<script src="permalink.js?v=42faa3971e"></script>
+<script src="feedback.js?v=42faa3971e"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
@@ -532,6 +532,13 @@ function tyndpYearFilter() {
   return ["any", ["!", ["has", "year"]],
           ["<=", ["get", "year"], state.year]];
 }
+let MODELLED_NAMES = null;   // public names of schemes the screen models (see setup)
+// Context planned-scheme features whose scheme the screen does NOT model.
+function notModelledFilter() {
+  if (!MODELLED_NAMES) return ["literal", true];
+  return ["!", ["in", ["get", "name"], ["literal", MODELLED_NAMES]]];
+}
+
 function datedFilter(kind) {
   return kind === "rest"
     ? ["any", ["!", ["has", "service_year_min"]],
@@ -761,6 +768,18 @@ async function setup() {
       gateNotice(meta.status);
     }
   } catch (e) { /* fall back to the unset stamp rather than blocking setup */ }
+  // The schemes the screen models, by public name: their violet/teal context
+  // twin is not drawn, so the headroom colour of the modelled circuit (or of
+  // the uplifted existing corridor) is what the reader sees. Without this a
+  // modelled scheme showed BOTH its dashed stress line and, in the gaps of
+  // that dash, its violet context twin - and read as violet.
+  try {
+    const ms = await fetch(`modelled_schemes.json?v=${TILE_VERSION}`, { cache: "no-store" });
+    if (ms.ok) {
+      const d = await ms.json();
+      if (Array.isArray(d.names) && d.names.length) MODELLED_NAMES = d.names;
+    }
+  } catch (e) { /* no list: the context twins stay, as before */ }
   try {
     const tj = await fetch(PUBLIC_BASE + "scenario_totals.json");
     if (tj.ok) TOTALS = await tj.json();
@@ -856,7 +875,7 @@ async function setup() {
   const projColor = ["case", ["==", ["coalesce", ["get", "is_dc"], false], true],
                      "#0e7490", "#7c3aed"];
   map.addLayer({ id: "proj_lines", type: "line", source: "context", "source-layer": "projects",
-    filter: ["all", ["==", ["geometry-type"], "LineString"], datedFilter("dated")],
+    filter: ["all", ["==", ["geometry-type"], "LineString"], datedFilter("dated"), notModelledFilter()],
     paint: { "line-color": projColor, "line-dasharray": [2.4, 1.8],
              "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.2, 8, 2.0, 12, 3.4] } });
 
@@ -873,7 +892,7 @@ async function setup() {
              "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2.5, 8, 4.5, 12, 7],
              "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
   map.addLayer({ id: "proj_points", type: "circle", source: "context", "source-layer": "projects",
-    filter: ["all", ["==", ["geometry-type"], "Point"], datedFilter("dated")],
+    filter: ["all", ["==", ["geometry-type"], "Point"], datedFilter("dated"), notModelledFilter()],
     paint: { "circle-color": "#7c3aed", "circle-opacity": 0.85,
              "circle-radius": ["interpolate", ["linear"], ["zoom"], 4, 2, 8, 4, 12, 7],
              "circle-stroke-color": "#f5f7f6", "circle-stroke-width": 0.8 } });
@@ -948,7 +967,7 @@ function buildLegends() {
             "HVDC links and interconnectors from the open v23 dataset. In the screen each >=500 MW link is a 1 GW converter-swing transfer pattern - covering schedule-swing and full-outage stress per GW - not a flow-carrying branch; no relief is modelled");
   legendRow(gNet, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
             "Planned projects by year", ["proj_lines", "proj_points"], true,
-            "Public development plans, shown from their promoter-stated year. Violet means the screen does NOT model this scheme (no register match, DC, refurbishment, or below the floor); a scheme the screen models is drawn on top in its headroom colour");
+            "Public development plans, shown from their promoter-stated year. Violet is drawn ONLY for a scheme the screen does not model at all (no matched endpoints, DC, below the floor); a scheme modelled as a new circuit is drawn in its headroom colour instead, and one modelled as a reconductoring shows on the existing corridor it uprates");
   const gTy = legendGroup(dev, "ENTSO-E TYNDP 2026 portfolio", true);
   legendRow(gTy, `<span class="swatch dashed thin" style="border-color:#06b6d4"></span>`,
             "TYNDP 2026 lines &amp; storage (ENTSO-E)",
@@ -1071,7 +1090,7 @@ function refresh() {
   for (const [id, kind] of [["proj_lines", "dated"], ["proj_points", "dated"]]) {
     if (!map.getLayer(id)) continue;
     const gf = map.getFilter(id);
-    map.setFilter(id, [gf[0], gf[1], datedFilter(kind)]);
+    map.setFilter(id, [gf[0], gf[1], datedFilter(kind), notModelledFilter()]);
   }
   for (const id of ["tyndp_lines", "tyndp_points", "tyndp_polys", "tyndp_poly_outline"]) {
     if (!map.getLayer(id)) continue;
