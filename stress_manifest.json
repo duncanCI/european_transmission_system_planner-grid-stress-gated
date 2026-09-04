@@ -1,5 +1,5 @@
 {
-  "build": "bbd033279b",
+  "build": "48bd3c8fa5",
   "features": 108945,
   "planned_branches": 1434,
   "scenarios": [
@@ -22,7 +22,7 @@
   "dc_links": "v4.3: modelled as 1 GW converter-injection transfer patterns (swing/outage per GW); not flow-carrying branches, no relief modelled",
   "tiling": "TWO archives per scenario, one per zoom band: _lo (z0-5, slim attributes) and _hi (z6-9, full). Formerly (z0-5 slim, z6-9 full); all branches at all zooms, no feature dropping. Max zoom is 9, not 10, to keep each archive under the repository's 50 MB ceiling after the screen widened to 90 kV Europe-wide; geometry is quantised to about 19 m rather than 9.5 m, below this data's own OSM-derived positional accuracy, and viewers overzoom past z9 as before",
   "archives_mb": {
-    "hev": 56.1,
+    "hev": 56.2,
     "lev": 56.0,
     "ntp": 70.2
   }
