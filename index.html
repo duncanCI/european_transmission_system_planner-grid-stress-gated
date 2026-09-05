@@ -9,8 +9,8 @@
 <link href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" rel="stylesheet">
 <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
 <script src="https://unpkg.com/pmtiles@3.2.1/dist/pmtiles.js"></script>
-<script src="permalink.js?v=48bd3c8fa5"></script>
-<script src="feedback.js?v=48bd3c8fa5"></script>
+<script src="permalink.js?v=8c68b61698"></script>
+<script src="feedback.js?v=8c68b61698"></script>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700&display=swap">
@@ -116,10 +116,11 @@
 <div class="hold" id="holdbar">
   Screening-grade N-1 stress screen. Post-fault headroom under scenario-shaped 1&nbsp;GW transfers
   only — no forecast loading, no energy-not-served, no voltage/stability/fault-level conclusions,
-  no reinforcement sizing, no delivery-year promises. DC links and interconnectors are screened as
-  1&nbsp;GW converter-swing patterns (schedule swing and full outage, per GW); they carry no
-  scheduled flow and provide no relief. Planned-line endpoints are probabilistic where the source
-  plan names a place rather than a station. <b>Read Method &amp; limits before quoting any figure.</b>
+  no reinforcement sizing, no delivery-year promises. HVDC links (existing, under construction,
+  register and TYNDP, 500&nbsp;MW and up) are modelled as controllable: converter swing and outage
+  stress per GW, plus a set-point dispatched to relieve the AC network (embedded links to full
+  rating, interconnectors to half &mdash; an assumption). Planned-line endpoints are probabilistic
+  where the source plan names a place rather than a station. <b>Read Method &amp; limits before quoting any figure.</b>
 </div>
 <header>
   <div>
@@ -151,8 +152,8 @@
     </div>
     <div style="margin-top:2px">
       <span title="Which stress mechanism the colours show. Bulk transfer is what boundary reinforcement addresses; DC swing is the local loss/swing of a converter infeed. Worst of both is the conservative envelope.">stress:</span>
-      <label><input type="radio" name="mech" value="env" checked> worst of both</label>
-      <label><input type="radio" name="mech" value="t"> bulk transfer</label>
+      <label><input type="radio" name="mech" value="env"> worst of both</label>
+      <label><input type="radio" name="mech" value="t" checked> bulk transfer</label>
       <label><input type="radio" name="mech" value="c"> DC swing</label>
       <label title="Sensitivity, not the default: headroom if the single most helpful HVDC link is redispatched to full rating at each branch's binding case. Single link, binding case only; a link never relieves its own swing."><input type="radio" name="mech" value="r"> with DC redispatch</label><br>
       network: <label><input type="radio" name="tier" value="t" checked> transmission &ge;220 kV</label>
@@ -279,7 +280,7 @@
 </div>
 <script>
 const PUBLIC_BASE = "https://duncanci.github.io/europe_transmission_system_planner/";
-const state = { year: 2030, scen: "ntp", st: "delta", mech: "env", tier: "t",
+const state = { year: 2030, scen: "ntp", st: "delta", mech: "t", tier: "t",
                 ddelta: false, lineScale: 1 };
 const HORIZONS = { ntp: [2030, 2035, 2040], lev: [2035, 2040], hev: [2035, 2040] };
 const SCEN_LABEL = { ntp: "NT+", lev: "LEV", hev: "HEV" };
@@ -368,6 +369,11 @@ function absWidthExpr(st, base = [0.8, 1.4, 2.2]) {
           11, ["*", k, ["+", base[2], ["*", 24, u]]]];
 }
 const PLANNED_BASE = [1.5, 2.4, 3.8];
+// HVDC links are drawn dotted and a little bolder than an AC circuit: they are
+// controllable elements whose colour is the GW of transfer at which the link
+// saturates under the relief dispatch, not a flow the network imposes.
+const DC_BASE = [2.0, 3.0, 4.6];
+const DC_DASH = [0.6, 1.2];
 // In "plan effect" mode, existing lines color by the CHANGE plans make, while
 // planned lines color by the headroom they ARRIVE with (they have no baseline).
 function colorExpr(layerKind) {
@@ -479,7 +485,7 @@ function stressFilter(kind) {
   } else {
     base.push(["has", hField(state.st)]);
   }
-  if (kind === "planned_line") base.push(onlineByNow());
+  if (kind === "planned_line" || kind === "dc_link") base.push(onlineByNow());
   return base;
 }
 
@@ -505,7 +511,7 @@ function unexposedFilter(kind) {
   const st = activeState();
   const f = ["all", ["==", ["get", "kind"], kind], ...reportedSet(),
              ["has", uField(st)], ["!", exposed(st)]];
-  if (kind === "planned_line") f.push(onlineByNow());
+  if (kind === "planned_line" || kind === "dc_link") f.push(onlineByNow());
   return f;
 }
 // Islanding is topological, so it has one value for the existing network and
@@ -676,6 +682,12 @@ const STRESS_SPECS = [
   { id: "stress_planned", filter: () => stressFilter("planned_line"),
     paint: () => ({ "line-color": colorExpr("planned"), "line-dasharray": [2.2, 1.6],
                     "line-width": widthExpr("planned") }) },
+  { id: "stress_unexposed_dc", filter: () => unexposedFilter("dc_link"),
+    paint: () => ({ "line-color": "#7f9bb0", "line-opacity": 0.6,
+                    "line-dasharray": DC_DASH, "line-width": 1.2 * state.lineScale }) },
+  { id: "stress_dc", filter: () => stressFilter("dc_link"),
+    paint: () => ({ "line-color": absColorExpr(activeState()), "line-dasharray": DC_DASH,
+                    "line-width": absWidthExpr(activeState(), DC_BASE) }) },
   { id: "hl_binding", filter: () => ["==", ["get", "fid"], "\u0000"],
     paint: () => ({ "line-color": "#f59e0b", "line-width": 7,
                     "line-opacity": 0.55, "line-blur": 1.5 }) },
@@ -803,7 +815,7 @@ async function setup() {
   // Drawn solid dark teal; they are not flow-carrying branches and get no
   // headroom color of their own.
   map.addLayer({ id: "dc_links", type: "line", source: "base", "source-layer": "dc_links",
-    paint: { "line-color": "#0e7490", "line-opacity": 0.85,
+    paint: { "line-color": "#0e7490", "line-opacity": 0.45,
              "line-width": ["interpolate", ["linear"], ["zoom"], 4, 1.3, 8, 2.2, 12, 3.6] } });
 
   if (TOTALS) {
@@ -964,7 +976,7 @@ function buildLegends() {
   const gNet = legendGroup(dev, "Network context", true);
   legendRow(gNet, `<span class="swatch" style="border-color:#0e7490"></span>`,
             "DC links (v23 dataset)", ["dc_links"], true,
-            "HVDC links and interconnectors from the open v23 dataset. In the screen each >=500 MW link is a 1 GW converter-swing transfer pattern - covering schedule-swing and full-outage stress per GW - not a flow-carrying branch; no relief is modelled");
+            "HVDC links and interconnectors from the open v23 dataset, drawn faint beneath the screen's own dotted, coloured HVDC layer. Every link of 500 MW or more - existing, under construction, in the register or in the TYNDP portfolio - is modelled: converter swing and outage patterns, plus a set-point dispatched for congestion relief");
   legendRow(gNet, `<span class="swatch dashed thin" style="border-color:#7c3aed"></span>`,
             "Planned projects by year", ["proj_lines", "proj_points"], true,
             "Public development plans, shown from their promoter-stated year. Violet is drawn ONLY for a scheme the screen does not model at all (no matched endpoints, DC, below the floor); a scheme modelled as a new circuit is drawn in its headroom colour instead, and one modelled as a reconductoring shows on the existing corridor it uprates");
@@ -1021,6 +1033,14 @@ function renderStressLegend() {
     row.innerHTML = `<span class="swatch" style="border-color:${c.color}"></span>${c.label}`;
     legend.appendChild(row);
   }
+  const dcNote = document.createElement("div");
+  dcNote.style.cssText = "color:var(--muted); margin-top:4px;";
+  dcNote.innerHTML = "Dotted lines: HVDC links, existing and planned, coloured on the same " +
+    "scale by the GW of transfer at which the link saturates. Their set-points are " +
+    "dispatched to relieve the AC network (embedded links to full rating, interconnectors " +
+    "to half - an assumption, flagged in each link's provenance), so the AC colours " +
+    "already include that relief.";
+  legend.appendChild(dcNote);
   if (state.st === "delta") {
     const note = document.createElement("div");
     note.style.cssText = "color:var(--muted); margin-top:4px;";
@@ -1080,6 +1100,10 @@ function refresh() {
     map.setFilter(`stress_unexposed__${band}`, unexposedFilter("line"));
     map.setFilter(`stress_unexposed_planned__${band}`, unexposedFilter("planned_line"));
     map.setFilter(`bridges__${band}`, bridgeFilter());
+    map.setPaintProperty(`stress_dc__${band}`, "line-color", absColorExpr(activeState()));
+    map.setPaintProperty(`stress_dc__${band}`, "line-width", absWidthExpr(activeState(), DC_BASE));
+    map.setFilter(`stress_dc__${band}`, stressFilter("dc_link"));
+    map.setFilter(`stress_unexposed_dc__${band}`, unexposedFilter("dc_link"));
   }
   for (const band of BANDS) {
     for (const id of ["stress_planned", "stress_unexposed_planned"]) {

@@ -188,7 +188,77 @@
    "topic": "Register",
    "assumption": "Refurbishments, uprates and series devices are not added as new circuits, in any of the plans' languages (repotenciaci\u00f3n, renovaci\u00f3n, rekonstrueerimine, verzwaren, Kabel REI, power line renewal, modernizare, major maintenance ...). A work on a corridor that already carries a circuit, whose wording does not say 'new circuit' in any language, is credited the same way a refurbishment is - as a rating uplift on the existing circuit - rather than dropped.",
    "basis": "Adding refurbishments created phantom parallel corridors (Spanish 'repotenciaci\u00f3n' alone put 41 uprating works on the map as second circuits); dropping unspecific corridor works hid 372 schemes at 2040 that plainly change the corridor. Note that 'reinforcement' is NOT filtered: in TSO usage a named reinforcement is new build.",
-   "bias": "A refurbishment, uprating or unspecific corridor scheme credits its single most probable existing span with the same x1.3 conductor uplift as an RTE renewal (one scheme, one span, never twice, across sources). Conservative where the work is in fact a second circuit; the multilingual 'second circuit' wording catches the ones that say so. Series devices remain uncredited: their benefit is dispatch-dependent, which this screen does not model."
+   "bias": "A refurbishment, uprating or unspecific corridor scheme credits the existing corridor between its two ends with the same x1.3 conductor uplift as an RTE renewal: the corridor is the shortest chain of existing spans, in kilometres, at the level the work runs at, capped at 3x the drawn length plus 40 km; one circuit per span unless the wording says both, and a span is never uplifted twice across sources (a second row on an already-credited corridor is recorded as the same work). Conservative where the work is in fact a second circuit; the multilingual 'second circuit' wording catches the ones that say so. Series devices remain uncredited: their benefit is dispatch-dependent, which this screen does not model."
+  },
+  {
+   "id": "refurb-corridor-level",
+   "topic": "Register",
+   "assumption": "The voltage at which a refurbishment or uprating is looked for is the level of the EXISTING circuit: the lowest figure the wording quotes ('275 kV to 400 kV' works on a 275 kV circuit), else the highest level the two named stations share, else any other quoted figure; levels are tried in that order until one yields a corridor of existing spans.",
+   "basis": "Half the NESO reconductoring schemes quote no voltage at all ('Replace the conductors on the existing circuit between Feckenham and Hams Hall'). Taking each station's lowest busbar found a 66 kV Feckenham and a 132 kV Hams Hall with no span between them; taking a voltage upgrade's target level searched a network that does not exist yet. Reconductoring named between two transmission stations is transmission work.",
+   "bias": "A voltage upgrade is credited as a x1.3 uplift of the lower level's circuit, not as the new higher-voltage circuit it will become: conservative on capacity, and the corridor keeps the old level's impedance. Where two stations share several levels and the wording says nothing, the highest is taken; a sub-transmission reconductoring between two 400 kV stations would be credited one level too high."
+  },
+  {
+   "id": "uplift-under-drawn-route",
+   "topic": "Register",
+   "assumption": "When no continuous chain of existing spans joins the two ends of a refurbishment at any of its candidate levels, the spans lying under the promoter's drawn route are the ones reconductored: existing spans within 1 km of the route, each at least 60% inside that corridor, together covering at least 30% of the route, at the scheme's level or, failing that, any transmission level (>= 220 kV).",
+   "basis": "The v23 graph is not continuous everywhere: Walham 400 kV carries no span towards Feckenham although the A586 circuit runs there, and Kincardine North 400 kV carries no span at all. Twelve schemes drawn from NESO's own route shapefiles (Feckenham-Walham, Feckenham-Minety, Spennymoor-Stella West, Bramford-Braintree-Rayleigh ...) found no chain for that reason alone.",
+   "bias": "The spans under the route are uplifted but the gap in the graph is not closed, so the corridor stays as broken in the screen as it was before. A route drawn schematically (a straight line between two stations) rarely stays within 1 km of the real spans and is rarely credited this way. Where a voltage upgrade is credited at the tier level, the circuit keeps its present voltage and impedance."
+  },
+  {
+   "id": "hvdc-relief-dispatch",
+   "topic": "DC",
+   "assumption": "Every HVDC link of 500 MW or more in the network at a horizon - existing, under construction, in a register or in the TYNDP portfolio - is a controllable element. For each scenario transfer pattern the links' set-points are chosen together, within each link's rating, to reduce the excess utilisation of the transmission-tier branches above the 12 GW headroom line (a linear programme per pattern), under two hard rules: a branch above that line may never be pushed below it, and a branch already below it may not be made more than a quarter worse. A link's share of each GW of transfer is bounded so that it reaches its rating at the 12 GW line and never beyond (a 2 GW embedded link carries at most 2/12 GW per GW). A link is used only where a GW of it buys more than 0.02 per unit of relief. The AC flows the screen reports include those set-points, held post-fault. An embedded link (both converters inside the synchronous area) may use its full rating; an interconnector or offshore landing only half.",
+   "basis": "Embedded HVDC is built precisely for controllable, separable relief of the AC network - the Eastern Green Links, SuedLink and Ultranet are operated for constraint management. Until v4.7 the screen modelled only the stress a link imposes and gave it no relief. A first formulation that minimised the single worst utilisation loaded thousands of other circuits (stressed >=220 kV circuits at 2040 rose from 3,686 to 5,222 Europe-wide) and was replaced by this relief-only form. Interconnector schedules are market-driven; only countertrading and redispatch move them, so half the rating is taken as available.",
+   "bias": "Optimistic where the operator would not run a link for constraint relief, and for interconnectors the half-rating share is a round assumption in both directions. The 12 GW line, the quarter and the 0.02 per unit per GW are ours (a tenth halved the relief the existing GB links could give; the quarter recovers most of it). Bounding a link by its full rating per GW - the first build - implied a 2 GW link carrying 24 GW at the 12 GW line, relieved corridors about ten times too much and failed the GB direction gate. Every new link also adds a 1 GW converter-swing stress pattern, so the headline worst-of-both column grows redder around new landings even as the bulk-transfer column is relieved. Post-fault the set-points are held, which is conservative: real schemes re-dispatch after a fault (the 'with DC redispatch' view keeps that single-link counterfactual). Relief is measured on pre-fault flows per pattern; a post-fault flow can still worsen for some contingencies."
+  },
+  {
+   "id": "hvdc-inventory-ratings",
+   "topic": "DC",
+   "assumption": "An HVDC link whose source states no rating is given one by class: 2 GW at 500 kV and above, 1.4 GW at 300-499 kV, 2 GW for a link named as a 2 GW-class scheme (Eastern Green Link, Sea Link, SuedLink, Ultranet), else 1 GW. Register and TYNDP links land on the matched station, else on the nearest >=220 kV station within 40 km of the drawn end; an end with nothing in reach is offshore or abroad and the link enters as a landing infeed. A TYNDP DC study corridor (an area) is read along its long axis. The same link listed by several sources counts once (OSM before register before TYNDP).",
+   "basis": "The register's HVDC rows quote a capacity in 3 of 24 cases and the TYNDP portfolio quotes none; the DC voltage class is stated far more often and tracks rating closely in practice.",
+   "bias": "A defaulted rating can be wrong by a factor of two either way (a 320 kV link may be 700 MW or 1.4 GW); every defaulted figure is flagged in the link's provenance. A corridor's long axis may end at the wrong station when the area is broad."
+  },
+  {
+   "id": "neso-future-circuits-offshore",
+   "topic": "DC",
+   "assumption": "A coded NESO 'future circuit' (BEDD_400, HUCS_400, SW_E1a/b/c, AC6, INTOG, HND_CS_FW, HND_PA ...) with a drawn end more than 40 km from any station at its level, or longer than 250 km, is an offshore element: an HVDC link (2 GW class when coded 400 kV, 1.4 GW when 275 kV) landing at the station it reaches, never an AC circuit. A future circuit landing offshore generation (one country, one landing) is a stress pattern only; it is not dispatched for relief. Coded 132 kV offshore connections are a wind farm's own export cable and are left out.",
+   "basis": "NESO publishes its offshore network design as bare coded lines without a technology field. Read as 400 kV AC with new stations at their sea ends, they formed an AC mesh at sea bypassing the B6 boundary: 67 GB circuits became stressed pre-fault and Alverdiscott's 400 kV feed jumped from 4 to 520 MW per GW. No AC circuit of that length is built at sea; these are the HVDC bootstraps and wind connections of the Holistic Network Design.",
+   "bias": "A long onshore future circuit (none is known) would be wrongly read as HVDC. Landing points are the nearest station within 40 km of the drawn end, which may not be the design's."
+  },
+  {
+   "id": "dc-swing-capability-cap",
+   "topic": "DC",
+   "assumption": "A converter-swing stress pattern is per GW of swing, but a link can swing at most its rating. Where the swing that would saturate a branch exceeds the link's rating, that link cannot saturate that branch and the figure is not counted as DC-swing stress.",
+   "basis": "With every planned HVDC link carrying a converter pattern, a branch that saturated at 8 GW of swing under a 1 GW link was coloured as if 8 GW could happen; the headline grew redder with each link added (GB 2040 with plans: 275 -> 467 pre-fault stressed circuits, all DC-mechanism).",
+   "bias": "A link's rating is the cap for a single link; two links swinging together are not combined, so joint events are understated. Links with a defaulted rating carry that default's uncertainty into the cap."
+  },
+  {
+   "id": "tyndp-generalised-endpoints",
+   "topic": "Planned endpoints",
+   "assumption": "A TYNDP project drawn between generalised points is attached in three steps: the nearest terminals at its voltage within 15 km of the drawn end; failing that, within 40 km, fanned over the nearest major substations by distance; failing that, the nearest >=220 kV station within 40 km receives a new busbar at the project's voltage, coupled by a typed transformer.",
+   "basis": "The portfolio draws many projects between a region's centre or a substation that does not exist yet: the North South Interconnector ends where Turleenan 400 kV will be, on a 275 kV network, and 19 of 51 eligible AC projects at 2040 were dropped as unresolved. The point of the portfolio is the relief the projects bring; a dropped project brings none.",
+   "bias": "The landing may be a neighbour of the intended substation and the new busbar's transformer is typed, not sourced; corridor lengths near a fanned end are approximate."
+  },
+  {
+   "id": "corridor-axis-lines",
+   "topic": "Planned endpoints",
+   "assumption": "A planned work published only as an AREA - an RTE 400 kV programme phase named after two stations ('CHAINGY-DAMBRON'), or a TYNDP AC study corridor - enters as one circuit: between the two named stations, or along the area's long axis to the nearest transmission stations (searched within 40 km). Voltage from the source, else 400 kV; year from the source, else 2035 for an RTE Phase 1 zone and 2040 for a TYNDP corridor with no date.",
+   "basis": "These plans refer to major upgrades or interconnections whose route is not yet chosen; leaving them out understated the planned network exactly where the largest works are. RTE's phases and the TYNDP corridors both name their ends or span a region whose extremities are the obvious terminals.",
+   "bias": "The circuit's length and terminals are approximate, so its impedance and the corridor it parallels may be off; the commissioning years for undated works are ours."
+  },
+  {
+   "id": "zone-uplift",
+   "topic": "Register",
+   "assumption": "A reinforcement area with no named ends ('MASSIF CENTRAL', 'HTLS in Lyonnais', 'Limitations removal on the Italian-Slovenian border', PST installations) is read as reinforcement of the network inside it: every existing span at the programme's level lying at least 60% inside the polygon takes the x1.3 conductor uplift, once - the 400 kV spans for an RTE 400 kV programme phase, the >=220 kV spans for a TYNDP area. Synchronisation programmes are not read as uplifts.",
+   "basis": "Such areas say the network there is reinforced without saying how; an uprating of what exists is the conservative reading and the same figure the renewal works already carry.",
+   "bias": "A phase-shifter or a synchronisation project changes power flow control, not thermal rating; crediting it as a rating uplift is a proxy. Spans just outside the polygon get nothing."
+  },
+  {
+   "id": "new-station-at-drawn-end",
+   "topic": "Planned endpoints",
+   "assumption": "When a planned circuit's drawn end lies where no station at the scheme's level exists within reach and the plan names none, the plan builds a new station there: a busbar at the drawn end, at the scheme's voltage, shared by every scheme drawn to within about 1.5 km of it. It has no transformer, there being nothing existing to couple to.",
+   "basis": "Loch Buidhe is a new 400 kV switching station in Sutherland at the meeting point of three NESO circuits; no 400 kV station lies within 40 km. Without the rule every circuit into it was dropped as unresolved and the through-path they form did not exist in the model.",
+   "bias": "A circuit into a new station that no other planned circuit reaches is a radial dead end: it carries no flow, so it appears screened but unexposed rather than absent. The station's position is the drawn end, which for a schematic line is approximate."
   }
  ]
 }

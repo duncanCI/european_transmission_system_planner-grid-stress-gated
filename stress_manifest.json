@@ -1,7 +1,7 @@
 {
-  "build": "48bd3c8fa5",
-  "features": 108945,
-  "planned_branches": 1434,
+  "build": "8c68b61698",
+  "features": 109205,
+  "planned_branches": 1453,
   "scenarios": [
     "HEV",
     "LEV",
@@ -17,13 +17,13 @@
     "Nordic"
   ],
   "dropped_areas": [],
-  "status": "screening-grade. GB gates re-run on THIS build and reported verbatim: direction PASS. (top-50 transfer-stressed corridors 88% within 10.0 km of NESO Beyond-2030 reinforcement corridors vs 61.1% random, permutation p=0.0. boundary overlap 50.0% against a 50% pass threshold - this is the leg that decides the verdict. magnitude legs: parameter cross-check PASS, magnitude ranking PASS. Continental cross-check NOT done.",
+  "status": "screening-grade. GB gates re-run on THIS build and reported verbatim: direction FAIL. (top-50 transfer-stressed corridors 82% within 10.0 km of NESO Beyond-2030 reinforcement corridors vs 61.1% random, permutation p=0.0015. boundary overlap 40.0% against a 50% pass threshold - this is the leg that decides the verdict. magnitude legs: parameter cross-check PASS, magnitude ranking FAIL. DIRECTION GATE NOT PASSED: the spatial signal is strong (p<0.01 and the B6 chain ranks) but our top boundary set overlaps NESO's by less than half, so treat corridor RANKING as unvalidated. Continental cross-check NOT done.",
   "transformers": "screened, not mapped in gated viewer v1",
-  "dc_links": "v4.3: modelled as 1 GW converter-injection transfer patterns (swing/outage per GW); not flow-carrying branches, no relief modelled",
+  "dc_links": "v4.7: every HVDC link >=500 MW (OSM, register, TYNDP lines and DC corridors) is modelled: converter swing/outage patterns AND a set-point dispatched per transfer pattern for congestion relief (embedded links to full rating, interconnectors to half, bounded to reach the rating at the 12 GW line); drawn as dotted lines of kind dc_link coloured by the GW of transfer at which the link saturates; the AC colours include the relief; DC-swing stress counts only where a link's full swing can saturate the branch",
   "tiling": "TWO archives per scenario, one per zoom band: _lo (z0-5, slim attributes) and _hi (z6-9, full). Formerly (z0-5 slim, z6-9 full); all branches at all zooms, no feature dropping. Max zoom is 9, not 10, to keep each archive under the repository's 50 MB ceiling after the screen widened to 90 kV Europe-wide; geometry is quantised to about 19 m rather than 9.5 m, below this data's own OSM-derived positional accuracy, and viewers overzoom past z9 as before",
   "archives_mb": {
-    "hev": 56.2,
-    "lev": 56.0,
-    "ntp": 70.2
+    "hev": 58.4,
+    "lev": 58.2,
+    "ntp": 72.6
   }
 }
